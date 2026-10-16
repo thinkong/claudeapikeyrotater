@@ -84,6 +84,7 @@ async fn status(State(st): State<Arc<AppState>>, h: HeaderMap) -> Response {
     admin!(st, h);
     let mut v = st.pool.status();
     v["check_model"] = json!(st.cfg.check_model);
+    v["version"] = json!(crate::VERSION);
     v["cooldowns"] = json!({
         "credit_exhausted_secs": st.cfg.cooldowns.credit_exhausted_secs,
         "auth_failure_secs": st.cfg.cooldowns.auth_failure_secs,

@@ -182,7 +182,7 @@ function logout(msg) { token = null; store("ckr_admin"); renderLogin(msg || "");
 function start() {
   $("#app").innerHTML = `
     <header>
-      <div class="brand">key<span>/</span>router</div>
+      <div class="brand">key<span>/</span>router <small class="hint" id="ver"></small></div>
       <div class="stats" id="stats"></div>
       <button class="btn sm" id="logout">Sign out</button>
     </header>
@@ -213,6 +213,7 @@ async function refresh() {
 }
 
 function renderStats() {
+  if (state.status?.version) $("#ver").textContent = "v" + state.status.version;
   const k = state.keys, avail = k.filter((x) => x.available).length;
   const spend = k.reduce((a, x) => a + x.spend_usd, 0);
   const remain = k.filter((x) => x.estimated_remaining_usd != null).reduce((a, x) => a + x.estimated_remaining_usd, 0);

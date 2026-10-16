@@ -81,6 +81,25 @@ About the image:
 
 To tune cooldowns or routing, mount a config file at `/data/config.toml`. It's picked up automatically. To use a file elsewhere, pass its path as the container's argument.
 
+## Releases (GitHub Actions)
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs on every push to `main` or `master`. Pushes that only touch `*.md` files are skipped. Each run:
+
+1. Runs the unit tests and the end-to-end suite. A failure stops the release, and nothing gets bumped.
+2. Bumps the patch version in `Cargo.toml` and `Cargo.lock`, using [`scripts/bump_version.py`](scripts/bump_version.py).
+3. Commits `Release vX.Y.Z [skip ci]`, tags it `vX.Y.Z`, and pushes both together. The `[skip ci]` marker stops that commit from starting another release.
+4. Builds the image and pushes it to `ghcr.io/<owner>/<repo>`, tagged `X.Y.Z`, `X.Y`, `latest` and `sha-<commit>`.
+5. Publishes a GitHub Release with auto-generated notes and a `linux-x86_64` archive, plus its `SHA256SUMS`. The archive holds the binary, the README and the example config. The binary needs glibc 2.41+ (Debian 13 / Ubuntu 25.04 or newer); on anything older, use the image.
+
+To bump the minor or major version instead, go to **Actions → Release → Run workflow** and pick the part.
+
+Things to know:
+
+- **Pull before you push again.** The version commit is made by the workflow, so your local branch is one commit behind after each release.
+- **Branch protection.** If the branch requires pull requests, the workflow can't push its version commit. Allow GitHub Actions to bypass that rule, or turn the rule off.
+- **Image visibility.** The first image push creates the GHCR package as private. To let others `docker pull` without logging in, make it public under the package's settings.
+- **Re-running a failure.** If the image or release step fails, use **Re-run failed jobs**. It reuses the version that was already tagged instead of bumping again.
+
 ## The web UI
 
 | Tab | What you can do |

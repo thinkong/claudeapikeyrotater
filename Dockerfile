@@ -18,7 +18,12 @@ RUN touch src/main.rs \
     && cargo build --release --locked \
     && mkdir -p /data
 
-# ---- runtime -------------------------------------------------------------
+# ---- binary only (for release assets) --------------------------------------
+# docker buildx build --target binary --output type=local,dest=dist .
+FROM scratch AS binary
+COPY --from=build /src/target/release/claude-key-router /claude-key-router
+
+# ---- runtime (default target) ----------------------------------------------
 # Distroless: glibc + CA certs only, no shell, runs as uid 65532 (nonroot).
 FROM gcr.io/distroless/cc-debian13:nonroot
 

@@ -15,6 +15,7 @@ use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
 const UI_HTML: &str = include_str!("../ui/index.html");
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct AppState {
     pub cfg: config::Config,
@@ -79,8 +80,13 @@ async fn main() -> Result<()> {
         .init();
 
     let arg = std::env::args().nth(1);
-    if arg.as_deref() == Some("healthcheck") {
-        std::process::exit(healthcheck());
+    match arg.as_deref() {
+        Some("healthcheck") => std::process::exit(healthcheck()),
+        Some("--version" | "-V" | "version") => {
+            println!("claude-key-router {VERSION}");
+            return Ok(());
+        }
+        _ => {}
     }
     let path = arg.or_else(|| std::env::var("CKR_CONFIG").ok().filter(|v| !v.is_empty()));
     let cfg = config::Config::load(path.as_deref())?;
@@ -107,7 +113,7 @@ async fn main() -> Result<()> {
     let listen = cfg.listen.clone();
     let upstream = cfg.upstream.trim_end_matches('/').to_string();
     tracing::info!(
-        "{} upstream keys, {} clients, upstream {upstream}",
+        "claude-key-router {VERSION}: {} upstream keys, {} clients, upstream {upstream}",
         pool.key_count(),
         pool.client_count()
     );
