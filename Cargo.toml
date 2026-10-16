@@ -1,6 +1,6 @@
 [package]
 name = "claude-key-router"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Transparent Claude API proxy that rotates across a pool of API keys and tracks cost and credits."
 
