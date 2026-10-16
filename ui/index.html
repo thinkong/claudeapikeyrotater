@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Key Router</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1c1a; --muted: #6d6a64; --line: #e4e1da;
+  --accent: #c2562f; --accent-ink: #ffffff; --ok: #2f7d4f; --warn: #a86b12; --bad: #b3372b; --off: #8a867e;
+  --ok-bg: #e5f2ea; --warn-bg: #f7ecd9; --bad-bg: #f6e1de; --off-bg: #ecebe7;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161514; --panel: #1f1e1c; --ink: #ecebe7; --muted: #9a968e; --line: #33312d;
+    --accent: #e0774f; --accent-ink: #1a0f0a; --ok: #6cc391; --warn: #e2a84e; --bad: #ee7a6c; --off: #8a867e;
+    --ok-bg: #1d3327; --warn-bg: #3a2d17; --bad-bg: #3d211d; --off-bg: #2a2926;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+button, input { font: inherit; color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
+header { display: flex; align-items: center; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--line); margin-bottom: 20px; flex-wrap: wrap; }
+.brand { font-family: var(--mono); font-weight: 650; letter-spacing: -0.02em; font-size: 15px; }
+.brand span { color: var(--accent); }
+.stats { display: flex; gap: 22px; margin-left: auto; flex-wrap: wrap; }
+.stat { display: flex; flex-direction: column; }
+.stat b { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+.stat small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+nav { display: flex; gap: 4px; margin-bottom: 18px; }
+nav button { background: none; border: 1px solid transparent; padding: 7px 14px; border-radius: 7px; cursor: pointer; color: var(--muted); }
+nav button.on { background: var(--panel); border-color: var(--line); color: var(--ink); font-weight: 600; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.bar { display: flex; gap: 10px; align-items: end; padding: 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.bar label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.bar h2 { margin: 0 auto 0 0; font-size: 15px; align-self: center; }
+input[type=text], input[type=password], input[type=number] {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; min-width: 0;
+}
+input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; border-color: var(--accent); }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 7px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+.btn.sm { padding: 4px 9px; font-size: 12.5px; }
+.btn:disabled { opacity: .5; cursor: progress; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.name { font-weight: 600; }
+.hint { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.sub { color: var(--muted); font-size: 12px; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.pill.off { color: var(--off); background: var(--off-bg); }
+.empty { padding: 36px; text-align: center; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.login { max-width: 380px; margin: 14vh auto; padding: 26px; }
+.login h1 { font-family: var(--mono); font-size: 18px; margin: 0 0 6px; }
+.login p { color: var(--muted); margin: 0 0 18px; }
+.login form { display: flex; flex-direction: column; gap: 10px; }
+.err { color: var(--bad); font-size: 13px; min-height: 1.2em; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 22px; width: min(520px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog h3 { margin: 0 0 6px; font-size: 16px; }
+dialog p { color: var(--muted); margin: 0 0 14px; }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.secret { font-family: var(--mono); font-size: 13px; background: var(--bg); border: 1px dashed var(--accent); border-radius: 8px; padding: 12px; word-break: break-all; user-select: all; }
+pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0; }
+#toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+.toast { background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 380px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); font-size: 13px; }
+.toast.bad { background: var(--bad); color: #fff; }
+.toast.ok { background: var(--ok); color: #fff; }
+@media (max-width: 700px) {
+  .wrap { padding: 0 16px 40px; }
+  .stats { margin-left: 0; gap: 16px; }
+  .bar label { flex: 1 1 140px; }
+  .bar input { width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="toasts"></div>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const usd = (v, d = 4) => v == null ? "—" : "$" + Number(v).toFixed(d);
+const int = (v) => v == null ? "—" : Number(v).toLocaleString();
+const ago = (ms) => {
+  if (!ms) return "never";
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.round(s / 60) + "m ago";
+  if (s < 86400) return Math.round(s / 3600) + "h ago";
+  return Math.round(s / 86400) + "d ago";
+};
+const dur = (s) => s < 60 ? s + "s" : s < 3600 ? Math.ceil(s / 60) + "m" : (s / 3600).toFixed(1) + "h";
+
+function store(k, v) { try { v === undefined ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (_) {} }
+function load(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } }
+
+let token = load("ckr_admin");
+let tab = load("ckr_tab") || "keys";
+let state = { keys: [], clients: [], requests: [], usage: [] };
+let timer = null;
+let busy = 0; // actions in flight; table refresh waits for them
+
+async function api(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: { "x-api-key": token, ...(body ? { "content-type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = null;
+  try { data = await r.json(); } catch (_) {}
+  if (r.status === 401) { logout("Session expired — enter the admin token again."); throw new Error("unauthorized"); }
+  if (!r.ok) throw new Error(data?.error?.message || ("HTTP " + r.status));
+  return data;
+}
+
+function toast(msg, kind = "") {
+  const t = document.createElement("div");
+  t.className = "toast " + kind;
+  t.textContent = msg;
+  $("#toasts").append(t);
+  setTimeout(() => t.remove(), kind === "bad" ? 7000 : 4000);
+}
+
+function checkToast(name, c) {
+  if (!c) return;
+  toast(`${name}: ${c.message}${c.error_message ? " — " + c.error_message : ""}`, c.ok ? "ok" : "bad");
+}
+
+// ------------------------------------------------------------- login
+
+function renderLogin(err = "") {
+  clearInterval(timer);
+  $("#app").innerHTML = `
+    <div class="panel login">
+      <h1>key<span style="color:var(--accent)">/</span>router</h1>
+      <p>Enter the admin token. It is in your config (<span class="mono">admin_token</span>) or was printed to the log on first start.</p>
+      <form id="loginForm">
+        <input type="password" id="tok" placeholder="Admin token" autocomplete="current-password" required>
+        <button class="btn primary">Sign in</button>
+        <div class="err">${esc(err)}</div>
+      </form>
+    </div>`;
+  $("#tok").focus();
+  $("#loginForm").onsubmit = async (e) => {
+    e.preventDefault();
+    token = $("#tok").value.trim();
+    try {
+      const r = await fetch("/proxy/status", { headers: { "x-api-key": token } });
+      if (!r.ok) throw new Error();
+      store("ckr_admin", token);
+      start();
+    } catch (_) { renderLogin("That token was not accepted."); }
+  };
+}
+
+function logout(msg) { token = null; store("ckr_admin"); renderLogin(msg || ""); }
+
+// ------------------------------------------------------------- shell
+
+function start() {
+  $("#app").innerHTML = `
+    <header>
+      <div class="brand">key<span>/</span>router</div>
+      <div class="stats" id="stats"></div>
+      <button class="btn sm" id="logout">Sign out</button>
+    </header>
+    <nav id="tabs">
+      <button data-t="keys">Upstream keys</button>
+      <button data-t="clients">Client keys</button>
+      <button data-t="activity">Activity</button>
+    </nav>
+    <main id="view"></main>`;
+  // (the skeleton for the current tab is built on first render)
+  $("#logout").onclick = () => logout();
+  $("#tabs").onclick = (e) => { const t = e.target.dataset.t; if (t) { tab = t; store("ckr_tab", t); renderView(); refresh(); } };
+  refresh();
+  clearInterval(timer);
+  timer = setInterval(() => { if (!busy && !$("#dlg").open && document.visibilityState === "visible") refresh(); }, 5000);
+}
+
+async function refresh() {
+  try {
+    const st = await api("GET", "/proxy/status");
+    state.keys = st.keys; state.clients = st.clients; state.status = st;
+    if (tab === "activity") {
+      const [req, use] = await Promise.all([api("GET", "/proxy/admin/requests?limit=60"), api("GET", "/proxy/usage?group_by=model")]);
+      state.requests = req; state.usage = use.rows;
+    }
+    renderStats(); renderView();
+  } catch (e) { if (e.message !== "unauthorized") toast("Refresh failed: " + e.message, "bad"); }
+}
+
+function renderStats() {
+  const k = state.keys, avail = k.filter((x) => x.available).length;
+  const spend = k.reduce((a, x) => a + x.spend_usd, 0);
+  const remain = k.filter((x) => x.estimated_remaining_usd != null).reduce((a, x) => a + x.estimated_remaining_usd, 0);
+  const hasRemain = k.some((x) => x.estimated_remaining_usd != null);
+  $("#stats").innerHTML = `
+    <div class="stat"><b>${avail}/${k.length}</b><small>keys available</small></div>
+    <div class="stat"><b>${usd(spend, 2)}</b><small>tracked spend</small></div>
+    <div class="stat"><b>${hasRemain ? usd(remain, 2) : "—"}</b><small>est. credit left</small></div>
+    <div class="stat"><b>${state.clients.length}</b><small>clients</small></div>`;
+}
+
+// Each tab has a static skeleton (forms) built once, and a table refreshed in place,
+// so the 5-second refresh never disturbs what you are typing.
+function renderView() {
+  for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b.dataset.t === tab);
+  const view = $("#view");
+  if (view.dataset.tab !== tab) {
+    view.dataset.tab = tab;
+    if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else view.innerHTML = "";
+  }
+  if (tab === "keys") $("#keyTable").innerHTML = keysTable();
+  else if (tab === "clients") $("#clientTable").innerHTML = clientsTable();
+  else renderActivity();
+}
+
+// ------------------------------------------------------------- upstream keys
+
+function statePill(k) {
+  if (k.state === "available") return `<span class="pill ok">Available</span>`;
+  if (k.state === "disabled") return `<span class="pill off">Disabled</span>`;
+  if (k.state === "out_of_credits") return `<span class="pill bad" title="${esc(k.reason)}">Out of credits · retry in ${dur(k.cooldown_secs)}</span>`;
+  const bad = (k.reason || "").startsWith("authentication");
+  return `<span class="pill ${bad ? "bad" : "warn"}" title="${esc(k.reason)}">${bad ? "Invalid key" : esc(k.reason || "Cooling down")} · ${dur(k.cooldown_secs)}</span>`;
+}
+
+function keysTable() {
+  const rows = state.keys.map((k) => `
+    <tr data-name="${esc(k.name)}">
+      <td><div class="name">${esc(k.name)}</div><div class="hint">${esc(k.key_hint)}</div></td>
+      <td>${statePill(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
+      <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd, 2)}
+        ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd, 2)} set ${ago(k.balance_set_ms)}</div>`}</td>
+      <td class="num">${usd(k.spend_usd)}</td>
+      <td class="num">${int(k.requests_since_start)}<div class="sub">${ago(k.last_used_ms)}</div></td>
+      <td><div class="actions">
+        <button class="btn sm" data-act="refresh" title="Clear cooldown and send a 1-token test request">Refresh</button>
+        <button class="btn sm" data-act="balance">Balance</button>
+        <button class="btn sm" data-act="replace">Replace</button>
+        <button class="btn sm" data-act="toggle">${k.enabled ? "Disable" : "Enable"}</button>
+        <button class="btn sm danger" data-act="remove">Remove</button>
+      </div></td>
+    </tr>`).join("");
+  return state.keys.length ? `
+        <table><thead><tr><th>Key</th><th>Status</th><th class="num">Est. credit left</th><th class="num">Spend</th><th class="num">Requests</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>` : `<div class="empty">No upstream keys yet. Add a Claude API key above.</div>`;
+}
+
+function keysSkeleton() {
+  $("#view").innerHTML = `
+    <div class="panel">
+      <form class="bar" id="addKey">
+        <h2>Upstream API keys</h2>
+        <label>Name<input type="text" id="kName" placeholder="org-a" required pattern="[A-Za-z0-9._\\-]{1,64}" title="letters, digits, - _ ."></label>
+        <label style="flex:1 1 260px">Claude API key<input type="password" id="kSecret" placeholder="sk-ant-api03-…" required autocomplete="off"></label>
+        <label>Credit balance ($, optional)<input type="number" id="kBal" min="0" step="0.01" placeholder="e.g. 100"></label>
+        <button class="btn primary" id="kAdd">Add &amp; check</button>
+      </form>
+      <div class="tablewrap" id="keyTable"></div>
+    </div>
+    <p class="sub" style="margin-top:12px">“Refresh” clears the cooldown and sends a 1-token request on ${esc(state.status?.check_model || "a cheap model")} — the only reliable way to tell whether the key still has credit. Credit left is an estimate: the balance you enter minus the spend this proxy has seen since.</p>`;
+  $("#addKey").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#kAdd"); btn.disabled = true;
+    const bal = $("#kBal").value;
+    try {
+      const r = await api("POST", "/proxy/admin/keys", { name: $("#kName").value.trim(), key: $("#kSecret").value.trim(), balance_usd: bal === "" ? null : Number(bal) });
+      $("#kName").value = $("#kSecret").value = $("#kBal").value = "";
+      checkToast(r.name, r.check);
+      refresh();
+    } catch (err) { toast(err.message, "bad"); } finally { btn.disabled = false; }
+  };
+  $("#keyTable").addEventListener("click", keyAction);
+}
+
+async function keyAction(e) {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const name = btn.closest("tr").dataset.name;
+  const k = state.keys.find((x) => x.name === name);
+  const path = "/proxy/admin/keys/" + encodeURIComponent(name);
+  busy++;
+  try {
+    switch (btn.dataset.act) {
+      case "refresh": {
+        btn.disabled = true; btn.textContent = "Checking…";
+        const r = await api("POST", path + "/refresh");
+        checkToast(name, r.check);
+        break;
+      }
+      case "balance": {
+        const v = await ask({ title: `Credit balance for ${name}`, text: "Enter the current balance shown in the Claude Console (e.g. after a top-up). Leave empty to stop tracking.", label: "Balance in USD", type: "number", value: k.balance_usd ?? "", allowEmpty: true });
+        if (v === null) return;
+        await api("PATCH", path, { balance_usd: v === "" ? null : Number(v) });
+        toast(`Balance for ${name} recorded.`, "ok");
+        break;
+      }
+      case "replace": {
+        const v = await ask({ title: `Replace API key for ${name}`, text: "Paste the new key. History and spend stay with this name; the cooldown is cleared and the new key is checked.", label: "New Claude API key", type: "password" });
+        if (!v) return;
+        const r = await api("PATCH", path, { key: v.trim() });
+        checkToast(name, r.check);
+        break;
+      }
+      case "toggle":
+        await api("PATCH", path, { enabled: !k.enabled });
+        break;
+      case "remove":
+        if (!(await confirmBox(`Remove ${name}?`, "The key stops receiving traffic immediately. Files, batches and other resources created with it become unreachable through the proxy. Usage history is kept."))) return;
+        await api("DELETE", path);
+        toast(`${name} removed.`);
+        break;
+    }
+  } catch (err) { toast(err.message, "bad"); } finally { busy--; }
+  refresh();
+}
+
+// ------------------------------------------------------------- clients
+
+function clientsTable() {
+  const rows = state.clients.map((c) => `
+    <tr data-name="${esc(c.name)}">
+      <td><div class="name">${esc(c.name)}</div><div class="hint">${esc(c.token_hint)}</div></td>
+      <td>${c.enabled ? `<span class="pill ok">Active</span>` : `<span class="pill off">Disabled</span>`}
+        ${c.remaining_budget_usd != null && c.remaining_budget_usd <= 0 ? ` <span class="pill bad">Budget used up</span>` : ""}</td>
+      <td class="num">${usd(c.spend_usd)}</td>
+      <td class="num">${c.budget_usd == null ? `<span class="sub">no limit</span>` : usd(c.budget_usd, 2)}
+        ${c.budget_usd == null ? "" : `<div class="sub">${usd(c.remaining_budget_usd, 2)} left</div>`}</td>
+      <td class="num sub">${ago(c.created_ms)}</td>
+      <td><div class="actions">
+        <button class="btn sm" data-act="rotate">New token</button>
+        <button class="btn sm" data-act="budget">Budget</button>
+        <button class="btn sm" data-act="toggle">${c.enabled ? "Disable" : "Enable"}</button>
+        <button class="btn sm danger" data-act="remove">Remove</button>
+      </div></td>
+    </tr>`).join("");
+  return state.clients.length ? `
+        <table><thead><tr><th>Client</th><th>Status</th><th class="num">Spend</th><th class="num">Budget</th><th class="num">Created</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>` : `<div class="empty">No client keys yet. Create one for each app or person that should use the proxy.</div>`;
+}
+
+function clientsSkeleton() {
+  $("#view").innerHTML = `
+    <div class="panel">
+      <form class="bar" id="addClient">
+        <h2>Client keys</h2>
+        <label>Name<input type="text" id="cName" placeholder="backend" required pattern="[A-Za-z0-9._\\-]{1,64}" title="letters, digits, - _ ."></label>
+        <label>Budget ($, optional)<input type="number" id="cBudget" min="0" step="0.01" placeholder="no limit"></label>
+        <button class="btn primary" id="cAdd">Create key</button>
+      </form>
+      <div class="tablewrap" id="clientTable"></div>
+    </div>
+    <p class="sub" style="margin-top:12px">Clients use these keys in place of a Claude API key. Only a hash is stored, so a token is shown once — use “New token” if one is lost.</p>`;
+  $("#addClient").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#cAdd"); btn.disabled = true;
+    const b = $("#cBudget").value;
+    try {
+      const r = await api("POST", "/proxy/admin/clients", { name: $("#cName").value.trim(), budget_usd: b === "" ? null : Number(b) });
+      $("#cName").value = $("#cBudget").value = "";
+      refresh();
+      showToken(r.name, r.token);
+    } catch (err) { toast(err.message, "bad"); } finally { btn.disabled = false; }
+  };
+  $("#clientTable").addEventListener("click", clientAction);
+}
+
+async function clientAction(e) {
+  const btn = e.target.closest("button[data-act]"); if (!btn) return;
+  const name = btn.closest("tr").dataset.name;
+  const c = state.clients.find((x) => x.name === name);
+  const path = "/proxy/admin/clients/" + encodeURIComponent(name);
+  busy++;
+  try {
+    switch (btn.dataset.act) {
+      case "rotate": {
+        if (!(await confirmBox(`New token for ${name}?`, "The current token stops working immediately."))) return;
+        const r = await api("POST", path + "/rotate");
+        showToken(name, r.token);
+        break;
+      }
+      case "budget": {
+        const v = await ask({ title: `Budget for ${name}`, text: `Requests are rejected once tracked spend (${usd(c.spend_usd)} so far) reaches the budget. Leave empty for no limit.`, label: "Budget in USD", type: "number", value: c.budget_usd ?? "", allowEmpty: true });
+        if (v === null) return;
+        await api("PATCH", path, { budget_usd: v === "" ? null : Number(v) });
+        break;
+      }
+      case "toggle":
+        await api("PATCH", path, { enabled: !c.enabled });
+        break;
+      case "remove":
+        if (!(await confirmBox(`Remove ${name}?`, "Its token stops working immediately. Usage history is kept."))) return;
+        await api("DELETE", path);
+        toast(`${name} removed.`);
+        break;
+    }
+  } catch (err) { toast(err.message, "bad"); } finally { busy--; }
+  refresh();
+}
+
+function showToken(name, tok) {
+  const base = location.origin;
+  const f = $("#dlgForm");
+  f.innerHTML = `
+    <h3>Key for ${esc(name)}</h3>
+    <p>Copy it now — it is not shown again.</p>
+    <div class="secret" id="tokVal">${esc(tok)}</div>
+    <pre class="snip">export ANTHROPIC_BASE_URL=${esc(base)}
+export ANTHROPIC_API_KEY=${esc(tok)}</pre>
+    <div class="row">
+      <button type="button" class="btn" id="copyTok">Copy key</button>
+      <button class="btn primary" value="ok">Done</button>
+    </div>`;
+  $("#copyTok").onclick = async () => {
+    try { await navigator.clipboard.writeText(tok); toast("Copied.", "ok"); }
+    catch (_) { getSelection().selectAllChildren($("#tokVal")); toast("Press Ctrl+C to copy."); }
+  };
+  $("#dlg").showModal();
+}
+
+// ------------------------------------------------------------- activity
+
+function renderActivity() {
+  const reqRows = state.requests.map((r) => {
+    const u = r.usage, cache = u.cache_read_input_tokens + u.cache_write_5m_input_tokens + u.cache_write_1h_input_tokens;
+    const okStatus = r.status >= 200 && r.status < 300;
+    return `<tr>
+      <td class="sub" title="${esc(new Date(r.ts_ms).toLocaleString())}">${ago(r.ts_ms)}</td>
+      <td>${esc(r.client)}</td>
+      <td>${esc(r.key ?? "—")}</td>
+      <td><span class="mono" style="font-size:12.5px">${esc(r.method)} ${esc(r.path)}</span><div class="sub">${esc(r.model ?? "")}${r.streamed ? " · stream" : ""}</div></td>
+      <td><span class="pill ${okStatus ? "ok" : r.status === 429 ? "warn" : "bad"}" title="${esc(r.error ?? "")}">${r.status}</span>${r.attempts > 1 ? `<div class="sub">${r.attempts} attempts</div>` : ""}</td>
+      <td class="num">${int(u.input_tokens)} / ${int(u.output_tokens)}<div class="sub">cache ${int(u.cache_read_input_tokens)} read · ${int(u.cache_write_5m_input_tokens + u.cache_write_1h_input_tokens)} write</div></td>
+      <td class="num">${r.cost_usd == null ? (r.model && okStatus ? `<span class="sub" title="model not in price table">unpriced</span>` : "—") : usd(r.cost_usd, 5)}</td>
+    </tr>`;
+  }).join("");
+  const useRows = state.usage.map((u) => {
+    const inTot = u.input_tokens + u.cache_read_input_tokens + u.cache_write_5m_input_tokens + u.cache_write_1h_input_tokens;
+    const hit = inTot ? Math.round(100 * u.cache_read_input_tokens / inTot) : 0;
+    return `<tr><td class="mono">${esc(u.model || "(no model)")}</td><td class="num">${int(u.requests)}</td>
+      <td class="num">${int(inTot)}</td><td class="num">${int(u.output_tokens)}</td><td class="num">${hit}%</td><td class="num">${usd(u.cost_usd, u.cost_usd < 1 ? 4 : 2)}</td></tr>`;
+  }).join("");
+  $("#view").innerHTML = `
+    <div class="grid2">
+      <div class="panel">
+        <div class="bar"><h2>Last 30 days by model</h2></div>
+        <div class="tablewrap">${state.usage.length ? `<table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Input tokens</th><th class="num">Output tokens</th><th class="num">Cache hit</th><th class="num">Cost</th></tr></thead><tbody>${useRows}</tbody></table>` : `<div class="empty">No traffic yet.</div>`}</div>
+      </div>
+      <div class="panel">
+        <div class="bar"><h2>Recent requests</h2></div>
+        <div class="tablewrap">${state.requests.length ? `<table><thead><tr><th>When</th><th>Client</th><th>Key</th><th>Request</th><th>Status</th><th class="num">Tokens in / out</th><th class="num">Cost</th></tr></thead><tbody>${reqRows}</tbody></table>` : `<div class="empty">No requests yet.</div>`}</div>
+      </div>
+    </div>`;
+}
+
+// ------------------------------------------------------------- dialogs
+
+function ask({ title, text, label, type = "text", value = "", allowEmpty = false }) {
+  return new Promise((resolve) => {
+    const d = $("#dlg"), f = $("#dlgForm");
+    f.innerHTML = `
+      <h3>${esc(title)}</h3><p>${esc(text)}</p>
+      <label class="sub" style="display:flex;flex-direction:column;gap:4px">${esc(label)}
+        <input id="askVal" type="${type}" ${type === "number" ? 'min="0" step="0.01"' : ""} ${allowEmpty ? "" : "required"} autocomplete="off" value="${esc(value)}"></label>
+      <div class="row"><button type="button" class="btn" id="askCancel">Cancel</button><button class="btn primary" value="ok">Save</button></div>`;
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    $("#askCancel").onclick = () => { finish(null); d.close(); };
+    f.onsubmit = () => finish($("#askVal").value);
+    d.onclose = () => finish(null);
+    d.showModal(); $("#askVal").focus();
+  });
+}
+
+function confirmBox(title, text) {
+  return new Promise((resolve) => {
+    const d = $("#dlg"), f = $("#dlgForm");
+    f.innerHTML = `<h3>${esc(title)}</h3><p>${esc(text)}</p>
+      <div class="row"><button type="button" class="btn" id="cfNo">Cancel</button><button class="btn primary" value="ok">Confirm</button></div>`;
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    $("#cfNo").onclick = () => { finish(false); d.close(); };
+    f.onsubmit = () => finish(true);
+    d.onclose = () => finish(false);
+    d.showModal();
+  });
+}
+
+token ? start() : renderLogin();
+</script>
+</body>
+</html>

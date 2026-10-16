@@ -1,0 +1,40 @@
+# Copy to config.toml and edit. Run: claude-key-router config.toml
+# Upstream keys and client keys are managed in the web UI at http://<listen>/ui.
+
+listen = "127.0.0.1:8787"              # use 0.0.0.0:8787 only behind a firewall/TLS terminator
+upstream = "https://api.anthropic.com"
+database = "claude-key-router.db"      # keys, client-token hashes, usage history. Keep this file private.
+# admin_token = "choose-a-long-secret"  # web UI / admin API login. If unset, one is generated on first
+#                                       # start, stored in the database and printed to the log once.
+# public_url = "https://claude-proxy.internal"   # how clients reach the proxy; used to rewrite batch results_url
+# check_model = "claude-haiku-5-5"      # model for the UI's 1-token key check
+# allow_unauthenticated = false         # true = accept requests without a client key (trusted networks only)
+# pricing_file = "pricing.toml"         # override the built-in price table without rebuilding
+
+# ---- Optional seeds. Imported into the database on first start only; after that the
+# ---- web UI is the source of truth (removing a seeded key in the UI is permanent).
+# keys_file = "keys.txt"                # one per line: `sk-ant-...` or `name=sk-ant-...`
+#
+# [[keys]]
+# name = "org-a"
+# key_env = "ANTHROPIC_KEY_A"           # or key = "sk-ant-..."
+# initial_balance_usd = 100.0
+#
+# [[clients]]
+# name = "backend"
+# token = "a-token-you-choose"          # or token_env = "VAR"; only a hash is stored
+# budget_usd = 50.0
+
+[cooldowns]
+credit_exhausted_secs = 3600   # skip a key that ran out of credits for 1 hour, then try it again
+auth_failure_secs = 86400      # skip a key that returned 401 for a day
+rate_limit_secs = 30           # 429 without retry-after
+overloaded_secs = 0            # 529/5xx: retry on another key without benching this one
+
+[routing]
+affinity = "conversation"      # "conversation" | "prefix" | "client" (see README)
+max_attempts = 4               # upstream attempts across keys per client request
+max_buffer_bytes = 67108864    # larger bodies stream through without failover
+connect_timeout_secs = 10
+read_timeout_secs = 900        # max silence between bytes; no total timeout (long streams are fine)
+pin_retention_days = 90
