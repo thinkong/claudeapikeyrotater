@@ -3,6 +3,8 @@ name: Release
 # Every push to the default branch: test, bump the patch version, commit + tag it,
 # then build the release image, push it to GHCR and publish a GitHub Release.
 # Run it by hand (Actions -> Release -> Run workflow) to bump minor or major instead.
+# Note: GitHub skips the run if the pushed head commit's message contains a
+# "skip ci" marker in square brackets anywhere, including its body.
 on:
   push:
     branches: [main, master]
