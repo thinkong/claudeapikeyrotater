@@ -41,6 +41,46 @@ client = anthropic.Anthropic(base_url="http://127.0.0.1:8787", api_key="sk-ckr-.
 
 The proxy never forwards client keys upstream. It swaps in a pool key.
 
+## Docker
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose logs claude-key-router
+```
+
+The first start prints the generated admin token in those logs. To choose your own, set `CKR_ADMIN_TOKEN` (in the environment or a `.env` file) before the first start. Then open http://127.0.0.1:8787/ui.
+
+Without compose:
+
+```bash
+docker build -t claude-key-router .
+```
+
+```bash
+docker run -d --name claude-key-router -p 127.0.0.1:8787:8787 -v ckr-data:/data claude-key-router
+```
+
+About the image:
+
+- **Size and contents:** about 58 MB. It's built on distroless (glibc and CA certificates only), with no shell.
+- **User:** runs as non-root (uid 65532).
+- **Health check:** has one built in, which runs `claude-key-router healthcheck`.
+- **State:** everything lives in the `/data` volume: keys, client-token hashes and usage history. Back that volume up and keep it private. If you bind-mount a host folder instead of using a named volume, that folder must be writable by uid 65532.
+- **Config:** no config file is needed. These environment variables override the defaults (and the config file, if there is one):
+
+| Variable | Default in the image |
+|---|---|
+| `CKR_LISTEN` | `0.0.0.0:8787` |
+| `CKR_DATABASE` | `/data/claude-key-router.db` |
+| `CKR_ADMIN_TOKEN` | generated on first start |
+| `CKR_PUBLIC_URL` | `http://<Host header>` |
+| `CKR_UPSTREAM` | `https://api.anthropic.com` |
+
+To tune cooldowns or routing, mount a config file at `/data/config.toml`. It's picked up automatically. To use a file elsewhere, pass its path as the container's argument.
+
 ## The web UI
 
 | Tab | What you can do |

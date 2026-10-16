@@ -1,0 +1,21 @@
+services:
+  claude-key-router:
+    build: .
+    image: claude-key-router:latest
+    restart: unless-stopped
+    ports:
+      # Loopback only. Put a TLS reverse proxy in front before exposing it further.
+      - "127.0.0.1:8787:8787"
+    environment:
+      # Leave empty to have one generated on first start (see `docker compose logs`).
+      CKR_ADMIN_TOKEN: ${CKR_ADMIN_TOKEN:-}
+      # How clients reach the proxy; used to rewrite batch results_url.
+      # CKR_PUBLIC_URL: https://claude-proxy.example.com
+    volumes:
+      # Keys, client-token hashes and usage history. Back this up; keep it private.
+      - ckr-data:/data
+      # Optional: tune cooldowns/routing with a config file.
+      # - ./config.toml:/data/config.toml:ro
+
+volumes:
+  ckr-data:

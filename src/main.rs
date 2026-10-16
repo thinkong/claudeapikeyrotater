@@ -45,14 +45,45 @@ fn admin_token(cfg: &config::Config, store: &store::Store) -> Result<String> {
     Ok(t)
 }
 
+/// `claude-key-router healthcheck`: exit 0 if `GET /health` on the local listener answers 200.
+/// For container health checks in images that have no shell or curl.
+fn healthcheck() -> i32 {
+    use std::io::{Read, Write};
+    let listen = std::env::var("CKR_LISTEN").unwrap_or_else(|_| "127.0.0.1:8787".into());
+    let port = listen.rsplit(':').next().unwrap_or("8787");
+    let addr = format!("127.0.0.1:{port}");
+    let timeout = Duration::from_secs(3);
+    let probe = || -> std::io::Result<bool> {
+        let sock = addr.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        let mut s = std::net::TcpStream::connect_timeout(&sock, timeout)?;
+        s.set_read_timeout(Some(timeout))?;
+        s.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
+        let mut buf = [0u8; 64];
+        let n = s.read(&mut buf)?;
+        Ok(buf[..n].starts_with(b"HTTP/1.1 200"))
+    };
+    match probe() {
+        Ok(true) => 0,
+        Ok(false) => 1,
+        Err(e) => {
+            eprintln!("healthcheck: {addr}: {e}");
+            1
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
 
-    let path = std::env::args().nth(1).or_else(|| std::env::var("CKR_CONFIG").ok()).unwrap_or_else(|| "config.toml".into());
-    let cfg = config::Config::load(&path)?;
+    let arg = std::env::args().nth(1);
+    if arg.as_deref() == Some("healthcheck") {
+        std::process::exit(healthcheck());
+    }
+    let path = arg.or_else(|| std::env::var("CKR_CONFIG").ok().filter(|v| !v.is_empty()));
+    let cfg = config::Config::load(path.as_deref())?;
     let seed_keys = cfg.seed_keys()?;
     let seed_clients = cfg.seed_clients()?;
     let pricing = pricing::Pricing::load(cfg.pricing_file.as_deref())?;

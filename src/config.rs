@@ -166,9 +166,36 @@ fn resolve_secret(value: &Option<String>, env: &Option<String>, what: &str) -> R
 }
 
 impl Config {
-    pub fn load(path: &str) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("reading config {path}"))?;
-        let cfg: Config = toml::from_str(&text).with_context(|| format!("parsing config {path}"))?;
+    /// Load the config file (if any), then apply `CKR_*` environment overrides.
+    /// `path = None` means "use config.toml if present, else defaults" — so a container
+    /// can run from environment variables alone.
+    pub fn load(path: Option<&str>) -> Result<Self> {
+        let text = match path {
+            Some(p) => std::fs::read_to_string(p).with_context(|| format!("reading config {p}"))?,
+            None => match std::fs::read_to_string("config.toml") {
+                Ok(t) => t,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(e) => return Err(e).context("reading config.toml"),
+            },
+        };
+        let name = path.unwrap_or("config.toml");
+        let mut cfg: Config = toml::from_str(&text).with_context(|| format!("parsing config {name}"))?;
+        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        if let Some(v) = env("CKR_LISTEN") {
+            cfg.listen = v;
+        }
+        if let Some(v) = env("CKR_UPSTREAM") {
+            cfg.upstream = v;
+        }
+        if let Some(v) = env("CKR_DATABASE") {
+            cfg.database = v;
+        }
+        if let Some(v) = env("CKR_ADMIN_TOKEN") {
+            cfg.admin_token = Some(v);
+        }
+        if let Some(v) = env("CKR_PUBLIC_URL") {
+            cfg.public_url = Some(v);
+        }
         if cfg.routing.max_attempts == 0 {
             bail!("routing.max_attempts must be at least 1");
         }

@@ -1,0 +1,8 @@
+target
+graft
+.git
+tests
+*.db
+*.db-*
+config.toml
+**/__pycache__
