@@ -244,7 +244,7 @@ function renderView() {
 function statePill(k) {
   if (k.state === "available") return `<span class="pill ok">Available</span>`;
   if (k.state === "disabled") return `<span class="pill off">Disabled</span>`;
-  if (k.state === "out_of_credits") return `<span class="pill bad" title="${esc(k.reason)}">Out of credits · retry in ${dur(k.cooldown_secs)}</span>`;
+  if (k.state === "out_of_credits") return `<span class="pill bad" title="${esc(k.reason)}">Out of credits · ${k.cooldown_secs > 0 ? "next check in " + dur(k.cooldown_secs) : "checking…"}</span>`;
   const bad = (k.reason || "").startsWith("authentication");
   return `<span class="pill ${bad ? "bad" : "warn"}" title="${esc(k.reason)}">${bad ? "Invalid key" : esc(k.reason || "Cooling down")} · ${dur(k.cooldown_secs)}</span>`;
 }
@@ -283,7 +283,7 @@ function keysSkeleton() {
       </form>
       <div class="tablewrap" id="keyTable"></div>
     </div>
-    <p class="sub" style="margin-top:12px">“Refresh” clears the cooldown and sends a 1-token request on ${esc(state.status?.check_model || "a cheap model")} — the only reliable way to tell whether the key still has credit. Credit left is an estimate: the balance you enter minus the spend this proxy has seen since.</p>`;
+    <p class="sub" style="margin-top:12px">Keys that run out of credits get no traffic; the proxy re-checks them in the background and brings them back once a check passes. “Refresh” checks a key right now with a 1-token request on ${esc(state.status?.check_model || "a cheap model")} — the only reliable way to tell whether the key still has credit. Credit left is an estimate: the balance you enter minus the spend this proxy has seen since.</p>`;
   $("#addKey").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("#kAdd"); btn.disabled = true;

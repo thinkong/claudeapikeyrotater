@@ -110,8 +110,8 @@ Things to know:
 
 Row buttons on **Upstream keys**:
 
-- **Refresh** clears the key's cooldown and sends a 1-output-token request on `check_model` (default Claude Haiku 5.5, a tiny fraction of a cent). This is the only reliable way to tell whether a key still has credit: a model listing succeeds even with an empty balance. The result appears as a notification and updates the key's state.
-- **Balance** records a known balance, for example after a top-up. A positive balance also lifts an out-of-credits cooldown.
+- **Refresh** clears the key's cooldown and sends a 1-output-token request on `check_model` (default Claude Haiku 5.5, a tiny fraction of a cent). The proxy already runs this check in the background for out-of-credit keys; Refresh just runs it now. This is the only reliable way to tell whether a key still has credit: a model listing succeeds even with an empty balance. The result appears as a notification and updates the key's state.
+- **Balance** records a known balance, for example after a top-up. On an out-of-credits key, a positive balance also triggers a credit check right away. The key comes back as soon as that check passes.
 - **Replace** swaps in a new secret under the same name. History is kept, and the new secret is checked right away.
 - **Disable**, **Remove**.
 
@@ -154,13 +154,19 @@ Request bodies up to `max_buffer_bytes` are buffered, so when a key fails the pr
 
 | Upstream answer | What the proxy does |
 |---|---|
-| `402 billing_error`, or `400` with "credit balance is too low" | Marks the key **out of credits**, skips it for `credit_exhausted_secs` (default 1 h), retries on another key |
+| `402 billing_error`, or `400` with "credit balance is too low" | Marks the key **out of credits** and retries on another key. The key gets no more traffic until a credit check passes (see below). |
 | `401` | Marks the key invalid, skips it for `auth_failure_secs`, retries on another key |
 | `429` | Skips the key for `retry-after` seconds, retries on another key |
 | `403`, `5xx`, `529` | Retries on another key (optionally benching it for `overloaded_secs`) |
 | any other `4xx` | Returns it to the client (it's the request's fault) |
 
-When a cooldown ends, the key gets traffic again. If it is still empty, it is benched again. **Refresh** in the UI checks a key right away instead of waiting. Only a successful *billable* call (Messages, batch creation) clears the out-of-credits flag, so a file download on an empty key doesn't un-bench it. Pinned requests and large streamed uploads can't move keys, so they get one attempt.
+**Out-of-credit keys never come back on a timer.** Every `credit_exhausted_secs` (default 1 hour), the proxy re-checks each one in the background with a 1-token request on `check_model`, at most 4 at a time. A key rejoins the pool only when that check succeeds. Client requests are never used to find out whether an empty key has been topped up, so having many empty keys doesn't cost your clients failed attempts. Each check costs a tiny fraction of a cent.
+
+You can also bring a key back sooner. **Refresh** checks it immediately, and recording a positive **Balance** triggers a check.
+
+Two things don't count as proof of credit: a check that ends in an error other than success, and a non-billable call such as a file download. Neither brings a key back.
+
+Rate-limited and overloaded keys work as before: they return to rotation when their (short) timer ends. A key that returned `401` returns after `auth_failure_secs` (default 1 day). Pinned requests and large streamed uploads can't move keys, so they get one attempt.
 
 If no key is available, the proxy answers in the API's own error format, always with `retry-after`, so SDKs back off correctly:
 
@@ -213,7 +219,7 @@ Things to know:
 
 - The estimate only knows about traffic through this proxy. Usage elsewhere (the Console, other apps) makes the real balance lower.
 - Batch spend is counted when results are downloaded through the proxy.
-- What actually benches a key is the out-of-credits error from the API, never the estimate.
+- What actually benches a key is the out-of-credits error from the API, never the estimate. What brings it back is a passing credit check.
 - Credits belong to the Claude organization. If two of your keys are from the **same** organization, both run dry together. Each is benched the first time it hits the error, so expect one failed-over attempt per key.
 
 ### What the proxy changes

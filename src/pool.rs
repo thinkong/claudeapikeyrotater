@@ -30,6 +30,8 @@ struct Inner {
     by_hash: HashMap<String, String>,
     pins: HashMap<String, String>,
     client_spend: HashMap<String, f64>,
+    /// Keys with a background credit check in flight.
+    checking: HashSet<String>,
 }
 
 pub struct Pool {
@@ -141,14 +143,16 @@ impl Pool {
             clients.insert(row.name.clone(), ClientInfo { row });
         }
         Ok(Pool {
-            inner: Mutex::new(Inner { keys, clients, by_hash, pins: loaded.pins, client_spend: loaded.client_spend }),
+            inner: Mutex::new(Inner { keys, clients, by_hash, pins: loaded.pins, client_spend: loaded.client_spend, checking: HashSet::new() }),
             store,
             cooldowns: cfg.cooldowns.clone(),
         })
     }
 
+    /// Usable for routing. An out-of-credits key stays out until a credit check
+    /// (background or Refresh) succeeds; its timer only says when to check next.
     fn available(k: &KeyInfo, now: i64) -> bool {
-        k.row.enabled && k.row.cooldown_until_ms <= now
+        k.row.enabled && k.row.exhausted_ms.is_none() && k.row.cooldown_until_ms <= now
     }
 
     pub fn key_count(&self) -> usize {
@@ -259,13 +263,51 @@ impl Pool {
         });
     }
 
+    /// Out of credits: no routing until a credit check succeeds; next check in
+    /// `credit_exhausted_secs`.
     pub fn on_credit_exhausted(&self, name: &str, message: &str) {
-        tracing::warn!(key = %name, "credits exhausted; cooling down for {}s", self.cooldowns.credit_exhausted_secs);
         let now = now_ms();
-        self.cooldown(name, self.cooldowns.credit_exhausted_secs, format!("out of credits: {message}"));
+        let next = now + self.cooldowns.credit_exhausted_secs as i64 * 1000;
+        let mut first = false;
         self.update_key(name, |k| {
+            first = k.row.exhausted_ms.is_none();
             k.row.exhausted_ms.get_or_insert(now);
+            k.row.cooldown_until_ms = next;
+            k.row.reason = Some(format!("out of credits: {message}"));
+            k.last_error = k.row.reason.clone();
         });
+        if first {
+            tracing::warn!(key = %name, "out of credits; held out of rotation, re-checking every {}s", self.cooldowns.credit_exhausted_secs);
+        }
+    }
+
+    /// Out-of-credit keys whose next check is due (marked in flight), up to `max` running at once.
+    pub fn due_credit_checks(&self, max: usize) -> Vec<String> {
+        let now = now_ms();
+        let mut inner = self.inner.lock();
+        let room = max.saturating_sub(inner.checking.len());
+        let due: Vec<String> = inner
+            .keys
+            .values()
+            .filter(|k| k.row.enabled && k.row.exhausted_ms.is_some() && k.row.cooldown_until_ms <= now)
+            .map(|k| k.row.name.clone())
+            .filter(|n| !inner.checking.contains(n))
+            .take(room)
+            .collect();
+        inner.checking.extend(due.iter().cloned());
+        due
+    }
+
+    /// After a credit check: if the key is still out of credits but the check didn't
+    /// schedule the next one (e.g. the check hit a 5xx), schedule it now so it isn't retried in a loop.
+    pub fn finish_credit_check(&self, name: &str) {
+        let now = now_ms();
+        let next = now + self.cooldowns.credit_exhausted_secs as i64 * 1000;
+        self.inner.lock().checking.remove(name);
+        let due = self.inner.lock().keys.get(name).map_or(false, |k| k.row.exhausted_ms.is_some() && k.row.cooldown_until_ms <= now);
+        if due {
+            self.update_key(name, |k| k.row.cooldown_until_ms = next);
+        }
     }
 
     pub fn on_auth_failed(&self, name: &str, message: &str) {
@@ -483,10 +525,8 @@ impl Pool {
             k.row.balance_set_ms = now_ms();
             k.spend_since_balance = 0.0;
             if b.map_or(false, |b| b > 0.0) && k.row.exhausted_ms.is_some() {
-                // A top-up: stop waiting for the credit cooldown.
-                k.row.exhausted_ms = None;
+                // A top-up: check the key now instead of waiting for the next scheduled check.
                 k.row.cooldown_until_ms = 0;
-                k.row.reason = None;
             }
         }
         let row = k.row.clone();
@@ -506,15 +546,18 @@ impl Pool {
         Ok(())
     }
 
-    /// Clear cooldowns so the key is tried again immediately.
+    /// Clear cooldowns before a manual check. An out-of-credits key stays out of
+    /// rotation until that check succeeds, so a failed or inconclusive check can't
+    /// put an empty key back into traffic.
     pub fn reset_key(&self, name: &str) -> Result<()> {
         if !self.inner.lock().keys.contains_key(name) {
             bail!("unknown key {name}");
         }
         self.update_key(name, |k| {
             k.row.cooldown_until_ms = 0;
-            k.row.reason = None;
-            k.row.exhausted_ms = None;
+            if k.row.exhausted_ms.is_none() {
+                k.row.reason = None;
+            }
         });
         Ok(())
     }
@@ -530,7 +573,7 @@ impl Pool {
                 let cooling = k.row.cooldown_until_ms > now;
                 let state = if !k.row.enabled {
                     "disabled"
-                } else if cooling && k.row.exhausted_ms.is_some() {
+                } else if k.row.exhausted_ms.is_some() {
                     "out_of_credits"
                 } else if cooling {
                     "cooling_down"
@@ -544,7 +587,7 @@ impl Pool {
                     "state": state,
                     "available": Self::available(k, now),
                     "cooldown_secs": secs_left(k.row.cooldown_until_ms),
-                    "reason": if cooling { k.row.reason.clone() } else { None },
+                    "reason": if cooling || k.row.exhausted_ms.is_some() { k.row.reason.clone() } else { None },
                     "last_error": k.last_error,
                     "out_of_credits_since_ms": k.row.exhausted_ms,
                     "balance_usd": k.row.balance_usd,

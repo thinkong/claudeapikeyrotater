@@ -26,7 +26,7 @@ database = "claude-key-router.db"      # keys, client-token hashes, usage histor
 # budget_usd = 50.0
 
 [cooldowns]
-credit_exhausted_secs = 3600   # skip a key that ran out of credits for 1 hour, then try it again
+credit_exhausted_secs = 3600   # out-of-credit keys get no traffic; re-checked (1-token request) this often
 auth_failure_secs = 86400      # skip a key that returned 401 for a day
 rate_limit_secs = 30           # 429 without retry-after
 overloaded_secs = 0            # 529/5xx: retry on another key without benching this one

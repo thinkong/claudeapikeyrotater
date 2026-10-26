@@ -226,7 +226,33 @@ async fn refresh_key(State(st): State<Arc<AppState>>, h: HeaderMap, Path(name): 
         return api_error(StatusCode::NOT_FOUND, "not_found_error", &e.to_string());
     }
     let check = check_key(&st, &name).await;
+    st.pool.finish_credit_check(&name);
     Json(json!({"ok": true, "name": name, "check": check})).into_response()
+}
+
+/// Background loop: re-check out-of-credit keys when their next check is due, so they
+/// rejoin the pool only after a check proves they have credit again. Real traffic is
+/// never used to find out.
+pub async fn credit_checker(st: Arc<AppState>) {
+    const MAX_PARALLEL: usize = 4;
+    let every = (st.cfg.cooldowns.credit_exhausted_secs / 4).clamp(1, 15);
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(every));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        for name in st.pool.due_credit_checks(MAX_PARALLEL) {
+            let st = st.clone();
+            tokio::spawn(async move {
+                let result = check_key(&st, &name).await;
+                if result["ok"].as_bool() == Some(true) && result["status"].as_u64() == Some(200) {
+                    tracing::info!(key = %name, "credit check passed; key is back in rotation");
+                } else {
+                    tracing::debug!(key = %name, "credit check: {}", result["message"]);
+                }
+                st.pool.finish_credit_check(&name);
+            });
+        }
+    }
 }
 
 /// Send a minimal billable request (1 output token on the cheapest model) with this key.

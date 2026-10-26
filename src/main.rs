@@ -118,6 +118,7 @@ async fn main() -> Result<()> {
         pool.client_count()
     );
     let state = Arc::new(AppState { cfg, admin_token, pricing, store: store.clone(), pool, http, upstream });
+    tokio::spawn(admin::credit_checker(state.clone()));
 
     let app = Router::new()
         .route("/", get(|| async { Redirect::temporary("/ui") }))

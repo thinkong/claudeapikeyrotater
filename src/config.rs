@@ -68,7 +68,8 @@ pub struct KeyCfg {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Cooldowns {
-    /// How long a key is skipped after the API reports insufficient credits.
+    /// How often an out-of-credits key is re-checked with a 1-token request. The key
+    /// gets no traffic until a check succeeds.
     pub credit_exhausted_secs: u64,
     /// How long a key is skipped after a 401 (revoked / invalid key).
     pub auth_failure_secs: u64,

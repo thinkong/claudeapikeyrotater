@@ -87,7 +87,12 @@ class H(BaseHTTPRequestHandler):
             STATE.update(json.loads(raw))
             return self._json(200, STATE)
         with LOCK:
-            LOG.append({"method": "POST", "path": self.path, "key": key, "beta": self.headers.get("anthropic-beta")})
+            try:
+                model = json.loads(raw).get("model")
+            except Exception:
+                model = None
+            LOG.append({"method": "POST", "path": self.path, "key": key, "beta": self.headers.get("anthropic-beta"),
+                        "model": model, "max_tokens": (json.loads(raw).get("max_tokens") if model else None)})
         if key in STATE["auth"]:
             return self._err(401, "authentication_error", "invalid x-api-key")
         if key in STATE["credit_400"]:

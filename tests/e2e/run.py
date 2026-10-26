@@ -30,7 +30,7 @@ database = "{db}"
 admin_token = "admin-secret"
 
 [cooldowns]
-credit_exhausted_secs = 600
+credit_exhausted_secs = 4
 """
 
 failures = []
@@ -54,6 +54,19 @@ def admin(method, path, body=None):
 
 def keys():
     return {k["name"]: k for k in admin("GET", "/keys").json()}
+
+
+def wait_until(cond, timeout=10.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if cond():
+            return True
+        time.sleep(0.25)
+    return cond()
+
+
+def mock_log():
+    return httpx.get(MOCK + "/mock/log").json()
 
 
 def refresh_all():
@@ -180,9 +193,28 @@ def run_tests():
     check(ok, "every request served by the only funded key")
     k = keys()
     check(all(k[n]["state"] == "out_of_credits" for n in ["a", "a2", "c"]), "a, a2 (400 shape) and c (402 shape) out of credits")
-    check(k["a"]["cooldown_secs"] > 500, "cooldown uses credit_exhausted_secs")
+    check(0 < k["a"]["cooldown_secs"] <= 4 and not k["a"]["available"], "next credit check scheduled from credit_exhausted_secs")
     r = admin("POST", "/keys/a/refresh").json()
     check(r["check"]["ok"] is False and "credit" in r["check"]["message"].lower() and keys()["a"]["state"] == "out_of_credits", "refresh re-checks and keeps an empty key benched")
+
+    print("out-of-credit keys never get traffic again on a timer")
+    seen = len(mock_log())
+    time.sleep(6)  # well past the 4 s check interval; the keys are still empty
+    rs = [post_msg(msg_body(f"later {i}")) for i in range(12)]
+    check(all(r.status_code == 200 and r.headers["x-proxy-upstream-key"] == "b" and r.headers["x-proxy-attempts"] == "1" for r in rs),
+          "after the interval, every request still goes straight to the funded key (no failed attempts)")
+    empty = {"sk-a", "sk-x", "sk-c"}
+    after = [e for e in mock_log()[seen:] if e["method"] == "POST" and e["path"] == "/v1/messages" and e["key"] in empty]
+    check(after and all(e["model"] == "claude-haiku-5-5" and e["max_tokens"] == 1 for e in after),
+          f"empty keys only see background 1-token checks ({len(after)} checks, no client traffic)")
+    k = keys()
+    check(all(k[n]["state"] == "out_of_credits" for n in ["a", "a2", "c"]), "keys stay out of credits while checks keep failing")
+    mock_config()
+    check(wait_until(lambda: all(keys()[n]["state"] == "available" for n in ["a", "a2", "c"]), 10),
+          "after a top-up, the background check brings keys back without a manual refresh")
+    mock_config(credit_400=["sk-a", "sk-x"], credit_402=["sk-c"])
+    for i in range(12):
+        post_msg(msg_body(f"rebench {i}"))
 
     print("all keys out of credits")
     mock_config(credit_400=["sk-a", "sk-x", "sk-b"], credit_402=["sk-c"])
@@ -193,8 +225,8 @@ def run_tests():
     print("top-up and refresh")
     mock_config()
     admin("PATCH", "/keys/a", {"balance_usd": 25})
-    k = keys()["a"]
-    check(k["state"] == "available" and k["estimated_remaining_usd"] == 25, "recording a balance lifts the credit cooldown")
+    check(keys()["a"]["estimated_remaining_usd"] == 25, "balance recorded")
+    check(wait_until(lambda: keys()["a"]["state"] == "available", 5), "recording a balance triggers an immediate check that brings the key back")
     r = admin("POST", "/keys/b/refresh").json()
     check(r["check"]["ok"] and keys()["b"]["state"] == "available", "refresh brings a funded key back")
     refresh_all()
