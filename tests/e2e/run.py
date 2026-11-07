@@ -43,7 +43,7 @@ def check(cond, what):
 
 
 def mock_config(**kw):
-    cfg = {"credit_400": [], "credit_402": [], "ratelimit": [], "auth": []}
+    cfg = {"credit_400": [], "credit_402": [], "ratelimit": [], "auth": [], "credit_big": []}
     cfg.update(kw)
     httpx.post(MOCK + "/mock/config", json=cfg)
 
@@ -212,6 +212,37 @@ def run_tests():
     mock_config()
     check(wait_until(lambda: all(keys()[n]["state"] == "available" for n in ["a", "a2", "c"]), 10),
           "after a top-up, the background check brings keys back without a manual refresh")
+    k = keys()["a"]
+    check(k["last_error"] is None and k["funded_reason"] == "refill detected by credit check" and k["refilled_after_ms"] and k["refilled_after_ms"] <= k["funded_since_ms"],
+          "recovered key: stale error cleared, refill window recorded")
+    hist = admin("GET", "/credit-periods?key=a").json()
+    check(len(hist) >= 2 and hist[0]["ended_ms"] is None and hist[1]["end_reason"] == "out of credits" and hist[1]["spend_usd"] > 0 and hist[1]["requests"] >= 1,
+          f"credit history: closed period with spend ${hist[1]['spend_usd'] if len(hist) > 1 else '?'} and an open period")
+
+    print("flapping key: check passes but real traffic fails -> checks slow down")
+    post_msg(msg_body("confirm a2"), {"x-proxy-key": "a2"})  # a real success ends a2's probation from the top-up
+    check(not keys()["a2"]["on_probation"], "a real request confirms a key that came back through a check")
+    mock_config(credit_big=["sk-x"])  # a2 can pay for a 1-token check but nothing real
+    for i in range(12):
+        post_msg(msg_body(f"flap {i}"))
+    a2 = keys()["a2"]
+    check(a2["state"] == "out_of_credits" and a2["credit_check_interval_secs"] == 4, "a2 out of credits after real traffic")
+    check(wait_until(lambda: keys()["a2"]["state"] == "available", 8) and keys()["a2"]["on_probation"], "1-token check passes -> back on probation")
+    for i in range(30):
+        post_msg(msg_body(f"flap again {i}"))
+        if keys()["a2"]["state"] == "out_of_credits":
+            break
+    a2 = keys()["a2"]
+    check(a2["state"] == "out_of_credits" and a2["credit_check_interval_secs"] == 8, f"real traffic fails again -> re-check interval doubled ({a2['credit_check_interval_secs']}s)")
+    mock_config()
+    admin("POST", "/keys/a2/refresh")
+    for i in range(30):
+        post_msg(msg_body(f"recover {i}"))
+        if not keys()["a2"]["on_probation"]:
+            break
+    a2 = keys()["a2"]
+    check(a2["state"] == "available" and not a2["on_probation"] and a2["credit_check_interval_secs"] == 4, "a real successful request ends probation and resets the interval")
+    mock_config(credit_400=["sk-a", "sk-x"], credit_402=["sk-c"])
     mock_config(credit_400=["sk-a", "sk-x"], credit_402=["sk-c"])
     for i in range(12):
         post_msg(msg_body(f"rebench {i}"))
@@ -225,7 +256,7 @@ def run_tests():
     print("top-up and refresh")
     mock_config()
     admin("PATCH", "/keys/a", {"balance_usd": 25})
-    check(keys()["a"]["estimated_remaining_usd"] == 25, "balance recorded")
+    check(24.99 < keys()["a"]["estimated_remaining_usd"] <= 25, "balance recorded (minus the immediate check's tiny cost)")
     check(wait_until(lambda: keys()["a"]["state"] == "available", 5), "recording a balance triggers an immediate check that brings the key back")
     r = admin("POST", "/keys/b/refresh").json()
     check(r["check"]["ok"] and keys()["b"]["state"] == "available", "refresh brings a funded key back")

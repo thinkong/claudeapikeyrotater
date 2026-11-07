@@ -57,11 +57,23 @@ pub struct ClientRow {
     pub deleted_ms: Option<i64>,
 }
 
+/// A credit period: from when a key was funded (added, or a refill was detected) until
+/// it ran out of credits. Spend and request counts are derived from `requests`.
+#[derive(Debug, Clone)]
+pub struct OpenPeriod {
+    pub started_ms: i64,
+    pub start_reason: String,
+    /// The refill happened after this moment (last failed check / credit error) and before `started_ms`.
+    pub refilled_after_ms: Option<i64>,
+}
+
 enum Op {
     Request(Box<RequestRow>),
     Pin(String, String, i64),
     Key(KeyRow),
     Client(ClientRow),
+    PeriodStart(String, OpenPeriod),
+    PeriodEnd(String, i64, String),
     Shutdown,
 }
 
@@ -71,6 +83,7 @@ pub struct Loaded {
     pub pins: HashMap<String, String>,
     pub key_spend: HashMap<String, f64>,
     pub client_spend: HashMap<String, f64>,
+    pub open_periods: HashMap<String, OpenPeriod>,
 }
 
 pub type OnInsert = Box<dyn Fn(&RequestRow) + Send + 'static>;
@@ -144,6 +157,16 @@ CREATE TABLE IF NOT EXISTS settings (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS credit_periods (
+    id INTEGER PRIMARY KEY,
+    key_name TEXT NOT NULL,
+    started_ms INTEGER NOT NULL,
+    start_reason TEXT NOT NULL,
+    refilled_after_ms INTEGER,
+    ended_ms INTEGER,
+    end_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS credit_periods_key ON credit_periods(key_name, started_ms);
 "#;
 
 impl Store {
@@ -212,7 +235,15 @@ impl Store {
         };
         let key_spend = sums("SELECT key_name, SUM(cost_usd) FROM requests WHERE key_name IS NOT NULL AND cost_usd IS NOT NULL GROUP BY key_name")?;
         let client_spend = sums("SELECT client, SUM(cost_usd) FROM requests WHERE cost_usd IS NOT NULL GROUP BY client")?;
-        Ok(Loaded { keys, clients, pins, key_spend, client_spend })
+        let mut open_periods = HashMap::new();
+        let mut st = c.prepare("SELECT key_name, started_ms, start_reason, refilled_after_ms FROM credit_periods WHERE ended_ms IS NULL")?;
+        for r in st.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, OpenPeriod { started_ms: r.get(1)?, start_reason: r.get(2)?, refilled_after_ms: r.get(3)? }))
+        })? {
+            let (k, v) = r?;
+            open_periods.insert(k, v);
+        }
+        Ok(Loaded { keys, clients, pins, key_spend, client_spend, open_periods })
     }
 
     /// Spend recorded for a key since `since_ms`.
@@ -256,6 +287,46 @@ impl Store {
     }
     pub fn save_client(&self, c: ClientRow) {
         let _ = self.tx.send(Op::Client(c));
+    }
+    pub fn start_period(&self, key: &str, p: OpenPeriod) {
+        let _ = self.tx.send(Op::PeriodStart(key.to_string(), p));
+    }
+    pub fn end_period(&self, key: &str, ended_ms: i64, reason: &str) {
+        let _ = self.tx.send(Op::PeriodEnd(key.to_string(), ended_ms, reason.to_string()));
+    }
+
+    /// Credit periods, newest first, with the spend and requests recorded during each.
+    pub fn credit_periods(&self, key: Option<&str>, limit: u32) -> Result<Value> {
+        let c = self.read.lock();
+        let mut st = c.prepare(
+            "SELECT p.key_name, p.started_ms, p.start_reason, p.refilled_after_ms, p.ended_ms, p.end_reason,
+                    COALESCE(SUM(r.cost_usd), 0),
+                    COUNT(CASE WHEN r.status BETWEEN 200 AND 299 AND r.model IS NOT NULL AND r.client <> '_key_check' THEN 1 END),
+                    COALESCE(SUM(r.input_tokens + r.cache_read_tokens + r.cache_write_5m_tokens + r.cache_write_1h_tokens), 0),
+                    COALESCE(SUM(r.output_tokens), 0)
+             FROM credit_periods p
+             LEFT JOIN requests r ON r.key_name = p.key_name AND r.ts_ms >= p.started_ms
+                  AND (p.ended_ms IS NULL OR r.ts_ms <= p.ended_ms)
+             WHERE (?1 IS NULL OR p.key_name = ?1)
+             GROUP BY p.id ORDER BY p.started_ms DESC, p.id DESC LIMIT ?2",
+        )?;
+        let rows = st
+            .query_map(params![key, limit], |r| {
+                Ok(json!({
+                    "key": r.get::<_, String>(0)?,
+                    "started_ms": r.get::<_, i64>(1)?,
+                    "start_reason": r.get::<_, String>(2)?,
+                    "refilled_after_ms": r.get::<_, Option<i64>>(3)?,
+                    "ended_ms": r.get::<_, Option<i64>>(4)?,
+                    "end_reason": r.get::<_, Option<String>>(5)?,
+                    "spend_usd": (r.get::<_, f64>(6)? * 1e6).round() / 1e6,
+                    "requests": r.get::<_, i64>(7)?,
+                    "input_tokens": r.get::<_, i64>(8)?,
+                    "output_tokens": r.get::<_, i64>(9)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(Value::Array(rows))
     }
 
     /// Flush pending writes and stop the writer thread.
@@ -446,6 +517,18 @@ fn writer_loop(mut conn: Connection, rx: mpsc::Receiver<Op>, on_insert: OnInsert
                                 enabled = excluded.enabled, budget_usd = excluded.budget_usd, created_ms = excluded.created_ms,
                                 deleted_ms = excluded.deleted_ms",
                             params![c.name, c.token_hash, c.token_hint, c.enabled, c.budget_usd, c.created_ms, c.deleted_ms],
+                        )?;
+                    }
+                    Op::PeriodStart(key, p) => {
+                        tx.execute(
+                            "INSERT INTO credit_periods (key_name, started_ms, start_reason, refilled_after_ms) VALUES (?1, ?2, ?3, ?4)",
+                            params![key, p.started_ms, p.start_reason, p.refilled_after_ms],
+                        )?;
+                    }
+                    Op::PeriodEnd(key, ended_ms, reason) => {
+                        tx.execute(
+                            "UPDATE credit_periods SET ended_ms = ?2, end_reason = ?3 WHERE key_name = ?1 AND ended_ms IS NULL",
+                            params![key, ended_ms, reason],
                         )?;
                     }
                     Op::Shutdown => done = true,

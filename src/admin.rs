@@ -28,6 +28,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/clients/{name}", axum::routing::patch(edit_client).delete(remove_client))
         .route("/admin/clients/{name}/rotate", post(rotate_client))
         .route("/admin/requests", get(recent_requests))
+        .route("/admin/credit-periods", get(credit_periods))
 }
 
 enum Caller {
@@ -128,6 +129,24 @@ async fn recent_requests(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q)
     let limit = q.limit.unwrap_or(50).min(500);
     let st2 = st.clone();
     match tokio::task::spawn_blocking(move || st2.store.recent_requests(limit)).await {
+        Ok(Ok(v)) => Json(v).into_response(),
+        Ok(Err(e)) => internal(e),
+        Err(e) => internal(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PeriodsQuery {
+    key: Option<String>,
+    limit: Option<u32>,
+}
+
+/// Credit history: one row per funded period (refill detected -> ran out), newest first.
+async fn credit_periods(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<PeriodsQuery>) -> Response {
+    admin!(st, h);
+    let limit = q.limit.unwrap_or(100).min(1000);
+    let st2 = st.clone();
+    match tokio::task::spawn_blocking(move || st2.store.credit_periods(q.key.as_deref(), limit)).await {
         Ok(Ok(v)) => Json(v).into_response(),
         Ok(Err(e)) => internal(e),
         Err(e) => internal(e),
@@ -302,7 +321,7 @@ async fn check_key(st: &Arc<AppState>, name: &str) -> Value {
         row.usage = usage;
         let cost = row.cost_usd;
         st.store.record_request(row);
-        st.pool.on_success(name);
+        st.pool.on_success(name, true);
         return json!({"ok": true, "status": status, "message": "Key works and has credit.", "cost_usd": cost});
     }
     let etype = v.pointer("/error/type").and_then(Value::as_str).unwrap_or("").to_string();

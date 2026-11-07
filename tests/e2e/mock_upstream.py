@@ -10,7 +10,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-STATE = {"credit_400": [], "credit_402": [], "ratelimit": [], "auth": []}
+# credit_big: a nearly empty balance — 1-token requests pass, anything bigger is refused.
+STATE = {"credit_400": [], "credit_402": [], "ratelimit": [], "auth": [], "credit_big": []}
 LOG = []
 FILES = {}  # file_id -> key
 LOCK = threading.Lock()
@@ -97,6 +98,13 @@ class H(BaseHTTPRequestHandler):
             return self._err(401, "authentication_error", "invalid x-api-key")
         if key in STATE["credit_400"]:
             return self._err(400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.")
+        if key in STATE["credit_big"] and self.path == "/v1/messages":
+            try:
+                big = json.loads(raw).get("max_tokens", 0) > 1
+            except Exception:
+                big = True
+            if big:
+                return self._err(400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API.")
         if key in STATE["credit_402"]:
             return self._err(402, "billing_error", "Insufficient credits.")
         if key in STATE["ratelimit"]:

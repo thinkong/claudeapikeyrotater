@@ -106,11 +106,12 @@ Things to know:
 |---|---|
 | **Upstream keys** | Add a key (checked immediately). See each key's state: available, cooling down (rate limit), out of credits (with time until retry), invalid, or disabled. See estimated credit left, spend and last use. |
 | **Client keys** | Create a key (shown once, only its hash is stored). See spend vs. budget. |
-| **Activity** | Last 30 days by model, including cache-hit rate and cost. Recent requests with key, status, tokens and cost. |
+| **Activity** | Last 30 days by model, including cache-hit rate and cost. Credit history across all keys. Recent requests with key, status, tokens and cost. |
 
 Row buttons on **Upstream keys**:
 
 - **Refresh** clears the key's cooldown and sends a 1-output-token request on `check_model` (default Claude Haiku 5.5, a tiny fraction of a cent). The proxy already runs this check in the background for out-of-credit keys; Refresh just runs it now. This is the only reliable way to tell whether a key still has credit: a model listing succeeds even with an empty balance. The result appears as a notification and updates the key's state.
+- **History** lists the key's credit periods: when it was funded or a refill was detected, when it ran out, how long it lasted, and how much was used.
 - **Balance** records a known balance, for example after a top-up. On an out-of-credits key, a positive balance also triggers a credit check right away. The key comes back as soon as that check passes.
 - **Replace** swaps in a new secret under the same name. History is kept, and the new secret is checked right away.
 - **Disable**, **Remove**.
@@ -160,6 +161,8 @@ Request bodies up to `max_buffer_bytes` are buffered, so when a key fails the pr
 | `403`, `5xx`, `529` | Retries on another key (optionally benching it for `overloaded_secs`) |
 | any other `4xx` | Returns it to the client (it's the request's fault) |
 
+**Keys that keep flapping are checked less often.** Sometimes a key passes the 1-token check but its first real request fails for lack of credit, for example when a nearly empty balance covers a tiny request but nothing bigger. When that happens, the key's re-check interval doubles each time, capped at once a day. The first real request that succeeds resets the interval. The UI shows such a key as "waiting for a real request to confirm" while it's on trial, and "checks slowed" while the interval is raised.
+
 **Out-of-credit keys never come back on a timer.** Every `credit_exhausted_secs` (default 1 hour), the proxy re-checks each one in the background with a 1-token request on `check_model`, at most 4 at a time. A key rejoins the pool only when that check succeeds. Client requests are never used to find out whether an empty key has been topped up, so having many empty keys doesn't cost your clients failed attempts. Each check costs a tiny fraction of a cent.
 
 You can also bring a key back sooner. **Refresh** checks it immediately, and recording a positive **Balance** triggers a check.
@@ -206,6 +209,18 @@ A stream's headers are sent before its usage is known, so a stream's cost is onl
 If a client disconnects mid-stream, the tokens billed so far are still recorded.
 
 Not metered: code-execution container hours, Priority Tier commitments, and Managed Agents session runtime. Their requests still pass through and are logged.
+
+### Credit history
+
+The proxy keeps a history of **credit periods** for each key. A period starts when the key is added, or when a refill is detected. A refill is detected when an out-of-credits key passes a credit check, or a request on it succeeds. A period ends when the key runs out of credits, is replaced, or is removed. For each period you see:
+
+- **When the refill happened.** Anthropic doesn't report top-ups, so this is a window: after the last failed check and before the successful one. With the default hourly checks, that's within the hour.
+- **When it ran out**, and how long the period lasted.
+- **How much the proxy used** during it, with the number of requests. Background credit checks are counted in the spend but not in the request count.
+
+If a key's balance was close to zero each time it was refilled, the amount used in a period is roughly how much was added. The **History** dialog shows the average per completed period.
+
+The UI shows this per key (**History**) and across all keys (**Activity**), and the API serves it at `GET /proxy/admin/credit-periods`. Tracking started with v0.1.3. Keys that were funded before upgrading start their first period at the upgrade.
 
 ### Remaining credits
 
@@ -254,6 +269,7 @@ The UI uses these endpoints. They require `x-api-key: <admin token>`.
 | `POST /proxy/admin/clients/{name}/rotate` | New token. The old one stops working. |
 | `DELETE /proxy/admin/clients/{name}` | Remove |
 | `GET /proxy/admin/requests?limit=50` | Recent requests |
+| `GET /proxy/admin/credit-periods?key=<name>&limit=100` | Credit history: funded periods, newest first, with spend and request counts |
 | `GET /proxy/usage?group_by=key\|client\|model\|day&since=<unix>` | Token and cost totals. Clients see their own. |
 | `GET /proxy/requests/{id}` | One request. Clients see their own. |
 | `GET /proxy/me` | The calling client's spend and budget |

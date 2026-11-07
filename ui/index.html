@@ -111,6 +111,18 @@ const ago = (ms) => {
   if (s < 86400) return Math.round(s / 3600) + "h ago";
   return Math.round(s / 86400) + "d ago";
 };
+const when = (ms) => {
+  if (!ms) return "—";
+  const d = new Date(ms), today = new Date();
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === today.toDateString() ? t : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + t;
+};
+const span = (a, b) => {
+  const s = Math.max(0, Math.round(((b ?? Date.now()) - a) / 1000));
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m";
+  if (s < 86400) return (s / 3600).toFixed(1) + "h";
+  return (s / 86400).toFixed(1) + "d";
+};
 const dur = (s) => s < 60 ? s + "s" : s < 3600 ? Math.ceil(s / 60) + "m" : (s / 3600).toFixed(1) + "h";
 
 function store(k, v) { try { v === undefined ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (_) {} }
@@ -205,8 +217,12 @@ async function refresh() {
     const st = await api("GET", "/proxy/status");
     state.keys = st.keys; state.clients = st.clients; state.status = st;
     if (tab === "activity") {
-      const [req, use] = await Promise.all([api("GET", "/proxy/admin/requests?limit=60"), api("GET", "/proxy/usage?group_by=model")]);
-      state.requests = req; state.usage = use.rows;
+      const [req, use, per] = await Promise.all([
+        api("GET", "/proxy/admin/requests?limit=60"),
+        api("GET", "/proxy/usage?group_by=model"),
+        api("GET", "/proxy/admin/credit-periods?limit=40"),
+      ]);
+      state.requests = req; state.usage = use.rows; state.periods = per;
     }
     renderStats(); renderView();
   } catch (e) { if (e.message !== "unauthorized") toast("Refresh failed: " + e.message, "bad"); }
@@ -241,10 +257,18 @@ function renderView() {
 
 // ------------------------------------------------------------- upstream keys
 
+function fundedLine(k) {
+  if (k.state === "out_of_credits" || !k.funded_since_ms) return "";
+  if (!(k.funded_reason || "").startsWith("refill")) return "";
+  const window = k.refilled_after_ms ? ` · refilled between ${when(k.refilled_after_ms)} and ${when(k.funded_since_ms)}` : "";
+  const trial = k.on_probation ? " · waiting for a real request to confirm" : "";
+  return `<div class="sub">back since ${when(k.funded_since_ms)}${window}${trial}</div>`;
+}
+
 function statePill(k) {
   if (k.state === "available") return `<span class="pill ok">Available</span>`;
   if (k.state === "disabled") return `<span class="pill off">Disabled</span>`;
-  if (k.state === "out_of_credits") return `<span class="pill bad" title="${esc(k.reason)}">Out of credits · ${k.cooldown_secs > 0 ? "next check in " + dur(k.cooldown_secs) : "checking…"}</span>`;
+  if (k.state === "out_of_credits") return `<span class="pill bad" title="${esc(k.reason)}">Out of credits · ${k.cooldown_secs > 0 ? "next check in " + dur(k.cooldown_secs) : "checking…"}</span>${k.out_of_credits_since_ms ? `<div class="sub">since ${when(k.out_of_credits_since_ms)}${k.credit_check_interval_secs > (state.status?.cooldowns?.credit_exhausted_secs || Infinity) ? ` · checks slowed to every ${dur(k.credit_check_interval_secs)} (passed a check, then failed real traffic)` : ""}</div>` : ""}`;
   const bad = (k.reason || "").startsWith("authentication");
   return `<span class="pill ${bad ? "bad" : "warn"}" title="${esc(k.reason)}">${bad ? "Invalid key" : esc(k.reason || "Cooling down")} · ${dur(k.cooldown_secs)}</span>`;
 }
@@ -253,13 +277,14 @@ function keysTable() {
   const rows = state.keys.map((k) => `
     <tr data-name="${esc(k.name)}">
       <td><div class="name">${esc(k.name)}</div><div class="hint">${esc(k.key_hint)}</div></td>
-      <td>${statePill(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
+      <td>${statePill(k)}${fundedLine(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
       <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd, 2)}
         ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd, 2)} set ${ago(k.balance_set_ms)}</div>`}</td>
-      <td class="num">${usd(k.spend_usd)}</td>
+      <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}</td>
       <td class="num">${int(k.requests_since_start)}<div class="sub">${ago(k.last_used_ms)}</div></td>
       <td><div class="actions">
         <button class="btn sm" data-act="refresh" title="Clear cooldown and send a 1-token test request">Refresh</button>
+        <button class="btn sm" data-act="history">History</button>
         <button class="btn sm" data-act="balance">Balance</button>
         <button class="btn sm" data-act="replace">Replace</button>
         <button class="btn sm" data-act="toggle">${k.enabled ? "Disable" : "Enable"}</button>
@@ -306,6 +331,9 @@ async function keyAction(e) {
   busy++;
   try {
     switch (btn.dataset.act) {
+      case "history":
+        await showHistory(name);
+        return;
       case "refresh": {
         btn.disabled = true; btn.textContent = "Checking…";
         const r = await api("POST", path + "/refresh");
@@ -471,10 +499,47 @@ function renderActivity() {
         <div class="tablewrap">${state.usage.length ? `<table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Input tokens</th><th class="num">Output tokens</th><th class="num">Cache hit</th><th class="num">Cost</th></tr></thead><tbody>${useRows}</tbody></table>` : `<div class="empty">No traffic yet.</div>`}</div>
       </div>
       <div class="panel">
+        <div class="bar"><h2>Credit history</h2></div>
+        <div class="tablewrap">${periodsTable(state.periods || [], true)}</div>
+      </div>
+      <div class="panel">
         <div class="bar"><h2>Recent requests</h2></div>
         <div class="tablewrap">${state.requests.length ? `<table><thead><tr><th>When</th><th>Client</th><th>Key</th><th>Request</th><th>Status</th><th class="num">Tokens in / out</th><th class="num">Cost</th></tr></thead><tbody>${reqRows}</tbody></table>` : `<div class="empty">No requests yet.</div>`}</div>
       </div>
     </div>`;
+}
+
+// ------------------------------------------------------------- credit history
+
+function periodsTable(rows, withKey) {
+  if (!rows.length) return `<div class="empty">No credit history yet.</div>`;
+  const body = rows.map((p) => {
+    const refill = (p.start_reason || "").startsWith("refill")
+      ? `<div>${when(p.started_ms)}</div><div class="sub">${p.refilled_after_ms ? "refilled after " + when(p.refilled_after_ms) : esc(p.start_reason)}</div>`
+      : `<div>${when(p.started_ms)}</div><div class="sub">${esc(p.start_reason)}</div>`;
+    const end = p.ended_ms
+      ? `<div>${when(p.ended_ms)}</div><div class="sub">${esc(p.end_reason)}</div>`
+      : `<span class="pill ok">Funded now</span>`;
+    return `<tr>${withKey ? `<td class="name">${esc(p.key)}</td>` : ""}<td>${refill}</td><td>${end}</td>
+      <td class="num">${span(p.started_ms, p.ended_ms)}</td><td class="num">${usd(p.spend_usd)}</td><td class="num">${int(p.requests)}</td></tr>`;
+  }).join("");
+  return `<table><thead><tr>${withKey ? "<th>Key</th>" : ""}<th>Funded from</th><th>Until</th><th class="num">Lasted</th><th class="num">Used</th><th class="num">Requests</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function showHistory(name) {
+  const rows = await api("GET", "/proxy/admin/credit-periods?limit=200&key=" + encodeURIComponent(name));
+  const done = rows.filter((p) => p.ended_ms && p.end_reason === "out of credits");
+  const avg = done.length ? done.reduce((a, p) => a + p.spend_usd, 0) / done.length : null;
+  const f = $("#dlgForm");
+  f.innerHTML = `
+    <h3>Credit history · ${esc(name)}</h3>
+    <p>Each row is one funded period: from when the key was added or a refill was detected, until it ran out of credits.
+      “Used” is what this proxy spent on the key in that period${avg != null ? ` — on average ${usd(avg, 2)} per refill over ${done.length} completed period${done.length > 1 ? "s" : ""}` : ""}.</p>
+    <div class="tablewrap" style="max-height:55vh;overflow:auto">${periodsTable(rows, false)}</div>
+    <div class="row"><button class="btn primary" value="ok">Close</button></div>`;
+  $("#dlg").style.width = "min(760px, calc(100vw - 32px))";
+  $("#dlg").addEventListener("close", () => { $("#dlg").style.width = ""; }, { once: true });
+  $("#dlg").showModal();
 }
 
 // ------------------------------------------------------------- dialogs

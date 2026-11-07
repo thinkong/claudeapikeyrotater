@@ -542,7 +542,7 @@ pub async fn handle(State(st): State<Arc<AppState>>, req: Request) -> Response {
     // Only a billable call proves the key has credit again; a pinned file download
     // or listing succeeds without credits and must not lift an out-of-credits cooldown.
     if matches!(kind, Kind::Messages | Kind::BatchCreate) {
-        st.pool.on_success(&key_name);
+        st.pool.on_success(&key_name, false);
     }
     let status = upstream.status();
     let up_headers = upstream.headers().clone();
