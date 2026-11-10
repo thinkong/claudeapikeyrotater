@@ -265,6 +265,15 @@ function fundedLine(k) {
   return `<div class="sub">back since ${when(k.funded_since_ms)}${window}${trial}</div>`;
 }
 
+function cycleLeft(k) {
+  const left = k.estimated_left_this_cycle_usd;
+  if (left == null) return "";
+  const tip = `Last cycle this key used ${usd(k.last_cycle_spend_usd, 2)} through this proxy before running out. Assumes the refill was the same size and the key isn't used elsewhere.`;
+  return left >= 0
+    ? `<div class="sub" title="${esc(tip)}">est. ${usd(left, 2)} left</div>`
+    : `<div class="sub" title="${esc(tip)}">${usd(-left, 2)} past last cycle</div>`;
+}
+
 function statePill(k) {
   if (k.state === "available") return `<span class="pill ok">Available</span>`;
   if (k.state === "disabled") return `<span class="pill off">Disabled</span>`;
@@ -280,7 +289,7 @@ function keysTable() {
       <td>${statePill(k)}${fundedLine(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
       <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd, 2)}
         ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd, 2)} set ${ago(k.balance_set_ms)}</div>`}</td>
-      <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}</td>
+      <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}${cycleLeft(k)}</td>
       <td class="num">${int(k.requests_since_start)}<div class="sub">${ago(k.last_used_ms)}</div></td>
       <td><div class="actions">
         <button class="btn sm" data-act="refresh" title="Clear cooldown and send a 1-token test request">Refresh</button>

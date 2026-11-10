@@ -25,6 +25,8 @@ struct KeyInfo {
     last_credit_fail_ms: Option<i64>,
     /// Came back through a 1-token check and no real request has succeeded since.
     probation: bool,
+    /// What the proxy spent during the last full credit cycle (refill until out of credits).
+    last_cycle_spend: Option<f64>,
     /// Multiplier on the credit re-check interval; doubles when a key that passed a check
     /// immediately fails real traffic again, resets once real traffic succeeds.
     check_backoff: u32,
@@ -44,6 +46,7 @@ impl KeyInfo {
             last_credit_fail_ms: None,
             probation: false,
             check_backoff: 1,
+            last_cycle_spend: None,
         }
     }
 }
@@ -162,6 +165,7 @@ impl Pool {
         }
 
         let mut open_periods = loaded.open_periods;
+        let mut last_cycle = store.last_cycle_spend()?;
         let mut keys = BTreeMap::new();
         for row in key_rows.into_iter().filter(|r| r.deleted_ms.is_none()) {
             let mut k = KeyInfo::new(row);
@@ -169,6 +173,7 @@ impl Pool {
                 if k.row.balance_usd.is_some() { store.key_spend_since(&k.row.name, k.row.balance_set_ms)? } else { 0.0 };
             k.spend = loaded.key_spend.get(&k.row.name).copied().unwrap_or(0.0);
             k.last_credit_fail_ms = k.row.exhausted_ms;
+            k.last_cycle_spend = last_cycle.remove(&k.row.name);
             let open = open_periods.remove(&k.row.name);
             match (k.row.exhausted_ms, open) {
                 (None, Some(p)) => {
@@ -335,7 +340,14 @@ impl Pool {
             k.row.reason = Some(format!("out of credits: {message}"));
             k.last_error = k.row.reason.clone();
             k.last_credit_fail_ms = Some(now);
-            ended = k.period.take().is_some();
+            if let Some(p) = k.period.take() {
+                ended = true;
+                // Only a cycle that began with a refill and saw real traffic tells us how far a
+                // refill goes; a first period holds whatever was left when the key was added.
+                if p.start_reason.starts_with("refill") && !flapped {
+                    k.last_cycle_spend = Some(k.period_spend);
+                }
+            }
             k.period_spend = 0.0;
         });
         if ended {
@@ -628,6 +640,7 @@ impl Pool {
             k.probation = false;
             k.check_backoff = 1;
             let had = k.period.is_some();
+            k.last_cycle_spend = None;
             let p = OpenPeriod { started_ms: now, start_reason: "key replaced".into(), refilled_after_ms: None };
             k.period = Some(p.clone());
             k.period_spend = 0.0;
@@ -718,6 +731,11 @@ impl Pool {
                     "funded_reason": k.period.as_ref().map(|p| p.start_reason.clone()),
                     "refilled_after_ms": k.period.as_ref().and_then(|p| p.refilled_after_ms),
                     "spend_this_period_usd": k.period.as_ref().map(|_| round6(k.period_spend)),
+                    "last_cycle_spend_usd": k.last_cycle_spend.map(round6),
+                    "estimated_left_this_cycle_usd": match (&k.period, k.last_cycle_spend) {
+                        (Some(_), Some(last)) => Some(round6(last - k.period_spend)),
+                        _ => None,
+                    },
                     "on_probation": k.probation,
                     "credit_check_interval_secs": self.check_interval_secs(k),
                     "out_of_credits_since_ms": k.row.exhausted_ms,
@@ -773,6 +791,7 @@ mod tests {
         assert_eq!(k["state"], "out_of_credits");
         assert!(k["funded_since_ms"].is_null());
         assert_eq!(k["credit_check_interval_secs"], 100);
+        assert!(k["last_cycle_spend_usd"].is_null(), "the first period is not a refill");
 
         // A credit check passes: back in rotation, stale error cleared, new period, on probation.
         p.on_success("k", true);
@@ -787,6 +806,7 @@ mod tests {
         p.on_credit_exhausted("k", "Your credit balance is too low");
         assert_eq!(key(&p, "k")["credit_check_interval_secs"], 200);
         assert!(key(&p, "k")["cooldown_secs"].as_i64().unwrap() > 150);
+        assert!(key(&p, "k")["last_cycle_spend_usd"].is_null(), "a flapping cycle is not a full one");
 
         // Check passes again, and this time a real request succeeds: backoff resets.
         p.on_success("k", true);
@@ -794,6 +814,7 @@ mod tests {
         let k = key(&p, "k");
         assert_eq!(k["on_probation"], false);
         assert_eq!(k["credit_check_interval_secs"], 100);
+        assert!(k["estimated_left_this_cycle_usd"].is_null());
 
         store.shutdown();
         let periods = store.credit_periods(Some("k"), 10).unwrap();
@@ -802,6 +823,59 @@ mod tests {
         assert!(periods[0]["ended_ms"].is_null());
         assert_eq!(periods[1]["end_reason"], "out of credits");
         assert_eq!(periods[2]["start_reason"], "key added");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn estimate_left_from_last_full_cycle() {
+        let dir = std::env::temp_dir().join(format!("ckr-pool-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let spend = |p: &Pool, store: &Store, client: &str, cost: f64| {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            let row = RequestRow {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                ts_ms: now_ms(),
+                client: client.into(),
+                key_name: Some("k".into()),
+                method: "POST".into(),
+                path: "/v1/messages".into(),
+                model: Some("claude-haiku-5-5".into()),
+                status: 200,
+                streamed: false,
+                usage: Default::default(),
+                cost_usd: Some(cost),
+                upstream_request_id: None,
+                batch_item: None,
+                attempts: 1,
+                error: None,
+            };
+            p.on_insert(&row);
+            store.record_request(row);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        {
+            let (p, store) = pool(&dir);
+            p.add_key("k", "sk-test", None).unwrap();
+            spend(&p, &store, "c", 7.0);
+            p.on_credit_exhausted("k", "Your credit balance is too low");
+            assert!(key(&p, "k")["last_cycle_spend_usd"].is_null(), "the first period is not a refill");
+            p.on_success("k", false);
+            spend(&p, &store, "c", 1.5);
+            p.on_credit_exhausted("k", "Your credit balance is too low");
+            assert_eq!(key(&p, "k")["last_cycle_spend_usd"], 1.5);
+            spend(&p, &store, "_key_check", 0.0001);
+            p.on_success("k", true);
+            spend(&p, &store, "c", 0.5);
+            p.on_success("k", false);
+            assert_eq!(key(&p, "k")["estimated_left_this_cycle_usd"], 1.0);
+            store.shutdown();
+        }
+        // Restart: the last cycle comes back from the database.
+        let (p, store) = pool(&dir);
+        let k = key(&p, "k");
+        assert_eq!(k["last_cycle_spend_usd"], 1.5);
+        assert_eq!(k["estimated_left_this_cycle_usd"], 1.0);
+        store.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

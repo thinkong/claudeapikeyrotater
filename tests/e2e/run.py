@@ -218,6 +218,8 @@ def run_tests():
     hist = admin("GET", "/credit-periods?key=a").json()
     check(len(hist) >= 2 and hist[0]["ended_ms"] is None and hist[1]["end_reason"] == "out of credits" and hist[1]["spend_usd"] > 0 and hist[1]["requests"] >= 1,
           f"credit history: closed period with spend ${hist[1]['spend_usd'] if len(hist) > 1 else '?'} and an open period")
+    check(hist[1]["start_reason"] == "key added" and keys()["a"]["estimated_left_this_cycle_usd"] is None,
+          f"no 'estimated left' from a first period, only from refills ({hist[1]['start_reason']!r}, {keys()['a']['estimated_left_this_cycle_usd']!r})")
 
     print("flapping key: check passes but real traffic fails -> checks slow down")
     post_msg(msg_body("confirm a2"), {"x-proxy-key": "a2"})  # a real success ends a2's probation from the top-up

@@ -246,6 +246,32 @@ impl Store {
         Ok(Loaded { keys, clients, pins, key_spend, client_spend, open_periods })
     }
 
+    /// Per key, what the proxy spent during the most recent full credit cycle: the latest
+    /// period that started with a refill and ran out of credits, not older than the key's
+    /// current secret. A key's first period (added or tracking started mid-cycle) holds an
+    /// unknown remainder rather than a refill, and cycles in which only the credit check got
+    /// through (flapping) say nothing about the refill size, so both are skipped.
+    pub fn last_cycle_spend(&self) -> Result<HashMap<String, f64>> {
+        let c = self.read.lock();
+        let mut st = c.prepare(
+            "SELECT p.key_name, p.started_ms, COALESCE(SUM(r.cost_usd), 0)
+             FROM credit_periods p
+             LEFT JOIN requests r ON r.key_name = p.key_name AND r.ts_ms >= p.started_ms AND r.ts_ms <= p.ended_ms
+             WHERE p.end_reason = 'out of credits' AND p.start_reason LIKE 'refill%'
+               AND p.started_ms >= COALESCE((SELECT MAX(q.started_ms) FROM credit_periods q
+                    WHERE q.key_name = p.key_name AND q.start_reason IN ('key added', 'key replaced')), 0)
+             GROUP BY p.id
+             HAVING COUNT(CASE WHEN r.status BETWEEN 200 AND 299 AND r.client <> '_key_check' THEN 1 END) > 0
+             ORDER BY p.started_ms",
+        )?;
+        let mut out = HashMap::new();
+        for r in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(2)?)))? {
+            let (k, v) = r?;
+            out.insert(k, v); // ordered by start, so the newest cycle wins
+        }
+        Ok(out)
+    }
+
     /// Spend recorded for a key since `since_ms`.
     pub fn key_spend_since(&self, key: &str, since_ms: i64) -> Result<f64> {
         let c = self.read.lock();

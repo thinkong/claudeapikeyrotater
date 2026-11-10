@@ -220,6 +220,8 @@ The proxy keeps a history of **credit periods** for each key. A period starts wh
 
 If a key's balance was close to zero each time it was refilled, the amount used in a period is roughly how much was added. The **History** dialog shows the average per completed period.
 
+Once a key has gone through a full cycle (a detected refill, real traffic, then out of credits), the key table shows an estimate under the spend: **"$X this cycle · est. $Y left"**, where Y is last cycle's spend minus this cycle's. If this cycle has already gone past it, it says **"$Z past last cycle"** instead. The estimate assumes refills are the same size and that the key isn't used outside the proxy. It skips cycles that can't tell you the refill size: a key's first period (it held whatever was left when it was added or when tracking started), and cycles where only the credit check got through. Replacing a key's secret clears it. The API returns it as `last_cycle_spend_usd` and `estimated_left_this_cycle_usd` on each key.
+
 The UI shows this per key (**History**) and across all keys (**Activity**), and the API serves it at `GET /proxy/admin/credit-periods`. Tracking started with v0.1.3. Keys that were funded before upgrading start their first period at the upgrade.
 
 ### Remaining credits
