@@ -272,6 +272,47 @@ impl Store {
         Ok(out)
     }
 
+    /// Price requests that were logged without a cost because their model was missing from
+    /// the price table at the time (e.g. a model released after this build). Every token
+    /// count is stored, so the cost is the same as if the price had been known. Runs at
+    /// startup, before spend totals are loaded. Returns how many rows were priced.
+    pub fn reprice_unpriced(&self, pricing: &crate::pricing::Pricing) -> Result<usize> {
+        let mut c = self.read.lock();
+        let tx = c.transaction()?;
+        let rows: Vec<(i64, String, Usage, bool)> = {
+            let mut st = tx.prepare(
+                "SELECT id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens,
+                        cache_write_1h_tokens, web_search_requests, fast, us_geo, batch_item IS NOT NULL
+                 FROM requests WHERE cost_usd IS NULL AND model IS NOT NULL AND status BETWEEN 200 AND 299",
+            )?;
+            let it = st.query_map([], |r| {
+                let (w5, w1): (i64, i64) = (r.get(5)?, r.get(6)?);
+                let usage = Usage {
+                    input: r.get::<_, i64>(2)? as u64,
+                    output: r.get::<_, i64>(3)? as u64,
+                    cache_read: r.get::<_, i64>(4)? as u64,
+                    cache_creation_total: (w5 + w1) as u64,
+                    cache_write_5m: Some(w5 as u64),
+                    cache_write_1h: Some(w1 as u64),
+                    web_search_requests: r.get::<_, i64>(7)? as u64,
+                    fast: r.get(8)?,
+                    us_geo: r.get(9)?,
+                };
+                Ok((r.get(0)?, r.get(1)?, usage, r.get(10)?))
+            })?;
+            it.collect::<rusqlite::Result<_>>()?
+        };
+        let mut n = 0;
+        for (id, model, usage, batch) in rows {
+            if let Some(cost) = pricing.cost(&model, &usage, batch) {
+                tx.execute("UPDATE requests SET cost_usd = ?2 WHERE id = ?1", params![id, cost])?;
+                n += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
     /// Spend recorded for a key since `since_ms`.
     pub fn key_spend_since(&self, key: &str, since_ms: i64) -> Result<f64> {
         let c = self.read.lock();

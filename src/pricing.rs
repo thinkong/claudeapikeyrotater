@@ -225,6 +225,21 @@ mod tests {
     }
 
     #[test]
+    fn fable_5_2() {
+        let p = Pricing::load(None).unwrap();
+        let u = Usage::from_value(&json!({
+            "input_tokens": 1_000_000, "output_tokens": 1_000_000,
+            "cache_read_input_tokens": 1_000_000, "cache_creation_input_tokens": 2_000_000,
+            "cache_creation": {"ephemeral_5m_input_tokens": 1_000_000, "ephemeral_1h_input_tokens": 1_000_000}
+        }));
+        // 8 + 40 + 0.20 + 10 + 16
+        approx(p.cost("claude-fable-5-2", &u, false).unwrap(), 74.2);
+        approx(p.cost("claude-mythos-5-2", &u, false).unwrap(), 74.2);
+        let fast = Usage::from_value(&json!({"input_tokens": 1_000_000, "output_tokens": 1_000_000, "speed": "fast"}));
+        approx(p.cost("claude-fable-5-2", &fast, false).unwrap(), 96.0);
+    }
+
+    #[test]
     fn opus_5_5_full_breakdown() {
         let p = Pricing::load(None).unwrap();
         let u = Usage::from_value(&json!({

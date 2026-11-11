@@ -827,6 +827,46 @@ mod tests {
     }
 
     #[test]
+    fn unpriced_requests_get_priced_once_the_model_is_known() {
+        let dir = std::env::temp_dir().join(format!("ckr-pool-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (_p, store) = pool(&dir);
+        let row = |model: &str, cost: Option<f64>| RequestRow {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            ts_ms: now_ms(),
+            client: "c".into(),
+            key_name: Some("k".into()),
+            method: "POST".into(),
+            path: "/v1/messages".into(),
+            model: Some(model.into()),
+            status: 200,
+            streamed: true,
+            usage: crate::pricing::Usage { input: 1_000_000, output: 1_000_000, cache_read: 1_000_000, ..Default::default() },
+            cost_usd: cost,
+            upstream_request_id: None,
+            batch_item: None,
+            attempts: 1,
+            error: None,
+        };
+        store.record_request(row("claude-future-9", None));
+        store.record_request(row("claude-opus-5-5", Some(1.0)));
+        store.shutdown();
+        let builtin = crate::pricing::Pricing::load(None).unwrap();
+        assert_eq!(store.reprice_unpriced(&builtin).unwrap(), 0, "still unknown: left unpriced");
+        let over = dir.join("prices.toml");
+        std::fs::write(&over, "[models.\"claude-future-9\"]
+input = 2.0
+output = 10.0
+").unwrap();
+        let pricing = crate::pricing::Pricing::load(Some(over.to_str().unwrap())).unwrap();
+        assert_eq!(store.reprice_unpriced(&pricing).unwrap(), 1, "only the unpriced row is touched");
+        // 2 input + 10 output + 0.2 cache read
+        assert!((store.key_spend_since("k", 0).unwrap() - 13.2).abs() < 1e-9);
+        assert_eq!(store.reprice_unpriced(&pricing).unwrap(), 0, "idempotent");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn estimate_left_from_last_full_cycle() {
         let dir = std::env::temp_dir().join(format!("ckr-pool-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();

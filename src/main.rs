@@ -95,6 +95,11 @@ async fn main() -> Result<()> {
     let pricing = pricing::Pricing::load(cfg.pricing_file.as_deref())?;
     let store = Arc::new(store::Store::open(&cfg.database)?);
     let admin_token = admin_token(&cfg, &store)?;
+    match store.reprice_unpriced(&pricing) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("priced {n} earlier requests whose model is now in the price table"),
+        Err(e) => tracing::warn!("could not price earlier unpriced requests: {e:#}"),
+    }
     let pool = Arc::new(pool::Pool::new(&cfg, seed_keys, seed_clients, store.clone())?);
     {
         let pool = pool.clone();

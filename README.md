@@ -195,7 +195,7 @@ Cost is computed from the response's `usage` and its `model` (the model that act
 - web search ($10 / 1K)
 - Batch results (×0.5)
 
-Prices are in [`pricing.toml`](pricing.toml), compiled in. To change them without rebuilding, set `pricing_file`. An unknown model is recorded as **unpriced**, never as $0.
+Prices are in [`pricing.toml`](pricing.toml), compiled in. To change them without rebuilding, set `pricing_file`. An unknown model is recorded as **unpriced**, never as $0. All token counts are still stored, so once the model is in the table (a newer release, or your `pricing_file`), those requests are priced on the next start and count toward key and client spend.
 
 Response bodies are never modified. Clients can see the cost in two ways:
 
