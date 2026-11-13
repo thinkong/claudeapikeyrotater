@@ -65,7 +65,7 @@ td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numer
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
 .pill.off { color: var(--off); background: var(--off-bg); }
 .empty { padding: 36px; text-align: center; color: var(--muted); }
-.grid2 { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .login { max-width: 380px; margin: 14vh auto; padding: 26px; }
 .login h1 { font-family: var(--mono); font-size: 18px; margin: 0 0 6px; }
 .login p { color: var(--muted); margin: 0 0 18px; }
@@ -83,6 +83,15 @@ pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); bor
 .toast { background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 380px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); font-size: 13px; }
 .toast.bad { background: var(--bad); color: #fff; }
 .toast.ok { background: var(--ok); color: #fff; }
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 14px; }
+.mode { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; cursor: pointer; }
+.mode:hover { border-color: var(--muted); }
+.mode.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.mode input { margin-top: 3px; accent-color: var(--accent); }
+.mode b { display: block; }
+.fields { display: grid; gap: 12px; padding: 14px; }
+.fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.fields .row { display: flex; gap: 8px; justify-content: flex-end; }
 @media (max-width: 700px) {
   .wrap { padding: 0 16px 40px; }
   .stats { margin-left: 0; gap: 16px; }
@@ -201,6 +210,7 @@ function start() {
     <nav id="tabs">
       <button data-t="keys">Upstream keys</button>
       <button data-t="clients">Client keys</button>
+      <button data-t="headers">Headers</button>
       <button data-t="activity">Activity</button>
     </nav>
     <main id="view"></main>`;
@@ -216,6 +226,7 @@ async function refresh() {
   try {
     const st = await api("GET", "/proxy/status");
     state.keys = st.keys; state.clients = st.clients; state.status = st;
+    if (tab === "headers") state.headers = await api("GET", "/proxy/admin/headers");
     if (tab === "activity") {
       const [req, use, per] = await Promise.all([
         api("GET", "/proxy/admin/requests?limit=60"),
@@ -248,10 +259,11 @@ function renderView() {
   const view = $("#view");
   if (view.dataset.tab !== tab) {
     view.dataset.tab = tab;
-    if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else view.innerHTML = "";
+    if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else if (tab === "headers") headersSkeleton(); else view.innerHTML = "";
   }
   if (tab === "keys") $("#keyTable").innerHTML = keysTable();
   else if (tab === "clients") $("#clientTable").innerHTML = clientsTable();
+  else if (tab === "headers") renderHeaders();
   else renderActivity();
 }
 
@@ -477,6 +489,132 @@ export ANTHROPIC_API_KEY=${esc(tok)}</pre>
     catch (_) { getSelection().selectAllChildren($("#tokVal")); toast("Press Ctrl+C to copy."); }
   };
   $("#dlg").showModal();
+}
+
+// ------------------------------------------------------------- headers
+
+const H_STATUS = {
+  forwarded: ["ok", "Forwarded"],
+  protected: ["ok", "Always forwarded"],
+  dropped_by_mode: ["off", "Dropped (minimal)"],
+  dropped_by_rule: ["warn", "Dropped (rule)"],
+  always_removed: ["off", "Always removed"],
+};
+const H_NOTE = {
+  protected: "The API needs this header.",
+  always_removed: "Credentials, connection and proxy headers never go upstream.",
+};
+const hPill = (s) => `<span class="pill ${H_STATUS[s][0]}">${H_STATUS[s][1]}</span>`;
+const matches = (p, n) => p.endsWith("*") ? n.startsWith(p.slice(0, -1)) : n === p;
+const csv = (v) => v.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+
+function headersSkeleton() {
+  $("#view").innerHTML = `
+    <div class="grid2">
+      <div class="panel">
+        <div class="bar"><h2>Header forwarding</h2><span class="sub" id="hSource"></span><button class="btn sm" id="hReset" hidden>Reset to config file</button></div>
+        <div class="modes" id="hModes">
+          <label class="mode" data-mode="all"><input type="radio" name="hmode" value="all">
+            <span><b>Forward all</b><span class="sub">Every client header goes upstream, except credentials and connection headers.</span></span></label>
+          <label class="mode" data-mode="minimal"><input type="radio" name="hmode" value="minimal">
+            <span><b>Minimal</b><span class="sub">Only what the API reads: <span class="mono">anthropic-*</span> (version, betas, workspace), <span class="mono">content-type</span> and <span class="mono">accept</span>. Client tags such as <span class="mono">user-agent</span> and <span class="mono">x-stainless-*</span> are dropped. Beta flags are all kept.</span></span></label>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="bar"><h2>Headers clients sent</h2><span class="sub">since the proxy started · names only, never values</span></div>
+        <div class="tablewrap" id="hSeen"></div>
+      </div>
+      <div class="panel">
+        <div class="bar"><h2>Beta flags clients sent</h2><span class="sub">values of <span class="mono">anthropic-beta</span></span></div>
+        <div class="tablewrap" id="hBetas"></div>
+      </div>
+      <div class="panel">
+        <div class="bar"><h2>Rules</h2><span class="sub">comma-separated, case-insensitive; a trailing * matches a prefix</span></div>
+        <form class="fields" id="hRules">
+          <label>Also forward in minimal mode (keep)<input type="text" id="hKeep" placeholder="x-request-tag"></label>
+          <label>Drop headers<input type="text" id="hDrop" placeholder="x-stainless-*"></label>
+          <label>Drop beta flags<input type="text" id="hDropBetas" placeholder="some-beta-*"></label>
+          <div class="row"><button class="btn primary" id="hSave">Save rules</button></div>
+        </form>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:12px">Changes apply to the next request; no restart needed. Once saved here, these settings replace the <span class="mono">[headers]</span> section of the config file until you reset them. <span class="mono">anthropic-version</span>, <span class="mono">content-type</span> and <span class="mono">anthropic-workspace-id</span> can't be dropped. Dropping a beta flag that a request's body uses makes the API reject that request.</p>`;
+  $("#hModes").onchange = (e) => { if (e.target.name === "hmode") saveHeaders({ ...state.headers.settings, mode: e.target.value }); };
+  $("#hReset").onclick = async () => {
+    if (!(await confirmBox("Reset header rules?", "The settings from the config file's [headers] section apply again (forward all, if it has none)."))) return;
+    busy++;
+    try { state.headers = await api("DELETE", "/proxy/admin/headers"); fillRules(); renderHeaders(); toast("Header rules reset.", "ok"); }
+    catch (err) { toast(err.message, "bad"); } finally { busy--; }
+  };
+  $("#hRules").onsubmit = (e) => {
+    e.preventDefault();
+    saveHeaders({ ...state.headers.settings, keep: csv($("#hKeep").value), drop: csv($("#hDrop").value), drop_betas: csv($("#hDropBetas").value) });
+  };
+  $("#hSeen").addEventListener("click", headerAction);
+  $("#hBetas").addEventListener("click", headerAction);
+  rulesFilled = false;
+}
+
+let rulesFilled = false;
+function fillRules() {
+  const s = state.headers.settings;
+  $("#hKeep").value = s.keep.join(", ");
+  $("#hDrop").value = s.drop.join(", ");
+  $("#hDropBetas").value = s.drop_betas.join(", ");
+  rulesFilled = true;
+}
+
+async function saveHeaders(settings, msg = "Header rules saved.") {
+  busy++;
+  try { state.headers = await api("PUT", "/proxy/admin/headers", settings); fillRules(); toast(msg, "ok"); }
+  catch (err) { toast(err.message, "bad"); } finally { busy--; renderHeaders(); }
+}
+
+function renderHeaders() {
+  const h = state.headers; if (!h) return;
+  if (!rulesFilled) fillRules();
+  const s = h.settings;
+  $("#hSource").textContent = h.source === "ui" ? "saved in the web UI" : "from the config file";
+  $("#hReset").hidden = h.source !== "ui";
+  for (const m of document.querySelectorAll("#hModes .mode")) {
+    const on = m.dataset.mode === s.mode;
+    m.classList.toggle("on", on); m.querySelector("input").checked = on;
+  }
+  const action = (kind, name, status) => {
+    if (status === "protected" || status === "always_removed") return `<span class="sub">${H_NOTE[status]}</span>`;
+    const label = status === "forwarded" ? "Drop" : "Forward";
+    const rule = (kind === "beta" ? s.drop_betas : s.drop).find((p) => matches(p, name));
+    const title = status === "dropped_by_rule" && rule !== name ? `title="Removes the rule ${esc(rule)}, which may cover others too"` : "";
+    return `<button class="btn sm" data-kind="${kind}" data-name="${esc(name)}" data-status="${status}" ${title}>${label}</button>`;
+  };
+  $("#hSeen").innerHTML = h.seen.length ? `
+    <table><thead><tr><th>Header</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>
+    ${h.seen.map((x) => `<tr><td class="mono">${esc(x.name)}</td><td class="sub">${ago(x.last_seen_ms)}</td><td>${hPill(x.status)}</td><td><div class="actions">${action("header", x.name, x.status)}</div></td></tr>`).join("")}
+    </tbody></table>` : `<div class="empty">No requests since the proxy started. Send one through the proxy and its headers show up here.</div>`;
+  $("#hBetas").innerHTML = h.betas_seen.length ? `
+    <table><thead><tr><th>Beta flag</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>
+    ${h.betas_seen.map((x) => `<tr><td class="mono">${esc(x.value)}</td><td class="sub">${ago(x.last_seen_ms)}</td><td>${hPill(x.status)}</td><td><div class="actions">${x.status === "always_removed" ? `<span class="sub">OAuth flags only work with a login token; upstream gets an API key.</span>` : action("beta", x.value, x.status)}</div></td></tr>`).join("")}
+    </tbody></table>` : `<div class="empty">No beta flags seen yet.</div>`;
+}
+
+function headerAction(e) {
+  const btn = e.target.closest("button[data-kind]"); if (!btn) return;
+  const { kind, name, status } = btn.dataset;
+  const s = state.headers.settings;
+  const next = { ...s, keep: [...s.keep], drop: [...s.drop], drop_betas: [...s.drop_betas] };
+  const list = kind === "beta" ? next.drop_betas : next.drop;
+  if (status === "forwarded") {
+    if (kind === "header" && next.mode === "minimal" && next.keep.some((p) => matches(p, name))) next.keep = next.keep.filter((p) => !matches(p, name));
+    else list.push(name);
+    saveHeaders(next, `${name} will be dropped.`);
+  } else if (status === "dropped_by_rule") {
+    const kept = list.filter((p) => !matches(p, name));
+    if (kind === "beta") next.drop_betas = kept; else next.drop = kept;
+    saveHeaders(next, `${name} will be forwarded.`);
+  } else if (status === "dropped_by_mode") {
+    next.keep.push(name);
+    saveHeaders(next, `${name} will be forwarded.`);
+  }
 }
 
 // ------------------------------------------------------------- activity

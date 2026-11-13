@@ -1,5 +1,6 @@
 mod admin;
 mod config;
+mod headers;
 mod pool;
 mod pricing;
 mod proxy;
@@ -25,6 +26,8 @@ pub struct AppState {
     pub pool: Arc<pool::Pool>,
     pub http: reqwest::Client,
     pub upstream: String,
+    /// Header forwarding rules; editable from the web UI.
+    pub headers: headers::HeaderRules,
 }
 
 pub fn now_ms() -> i64 {
@@ -122,7 +125,8 @@ async fn main() -> Result<()> {
         pool.key_count(),
         pool.client_count()
     );
-    let state = Arc::new(AppState { cfg, admin_token, pricing, store: store.clone(), pool, http, upstream });
+    let headers = headers::HeaderRules::load(cfg.headers.clone(), &store);
+    let state = Arc::new(AppState { cfg, admin_token, pricing, store: store.clone(), pool, http, upstream, headers });
     tokio::spawn(admin::credit_checker(state.clone()));
 
     let app = Router::new()

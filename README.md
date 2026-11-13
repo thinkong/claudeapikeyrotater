@@ -78,6 +78,7 @@ About the image:
 | `CKR_ADMIN_TOKEN` | generated on first start |
 | `CKR_PUBLIC_URL` | `http://<Host header>` |
 | `CKR_UPSTREAM` | `https://api.anthropic.com` |
+| `CKR_HEADERS` | `all` (`minimal` forwards only the headers the API reads) |
 
 To tune cooldowns or routing, mount a config file at `/data/config.toml`. It's picked up automatically. To use a file elsewhere, pass its path as the container's argument.
 
@@ -106,6 +107,7 @@ Things to know:
 |---|---|
 | **Upstream keys** | Add a key (checked immediately). See each key's state: available, cooling down (rate limit), out of credits (with time until retry), invalid, or disabled. See estimated credit left, spend and last use. |
 | **Client keys** | Create a key (shown once, only its hash is stored). See spend vs. budget. |
+| **Headers** | Choose **Forward all** or **Minimal** header forwarding. See every header name and beta flag clients have sent since the proxy started, what happens to each, and drop or forward it with one click. Changes apply to the next request. |
 | **Activity** | Last 30 days by model, including cache-hit rate and cost. Credit history across all keys. Recent requests with key, status, tokens and cost. |
 
 Row buttons on **Upstream keys**:
@@ -128,7 +130,7 @@ Everything the UI does goes through a JSON admin API, so you can script it too (
 
 Routing is sticky because of two constraints:
 
-1. **Prompt caches are per workspace.** If one conversation's turns spread across keys from different organizations, almost every turn is a cache miss.
+1. **Prompt caches are per workspace.** Caches are never shared between organizations, or between workspaces of one organization. If one conversation's turns spread across keys from different workspaces, almost every turn is a cache miss.
 2. **Resources belong to the organization that created them.** A `file_id`, batch, agent, session, skill or code-execution container only exists for the key that created it.
 
 So the proxy:
@@ -144,7 +146,7 @@ So the proxy:
   - **The turn that hits the error:** the same request is retried on the next key, and the client still gets a normal response.
   - **Later turns:** they go straight to that next key, which is also deterministic, so the conversation stays together there.
   - **When the original key comes back** (cooldown over, or **Refresh**): the conversation moves back to it.
-  - **The cost of each move:** the first turn on the new key is a prompt-cache miss, because caches don't cross organizations.
+  - **The cost of each move:** the first turn on the new key is a prompt-cache miss, unless the new key is in the same workspace, because caches don't cross workspaces.
 - **Lets you override per request:**
   - `x-proxy-affinity: <anything>` sets the sticky routing key.
   - `x-proxy-key: <key name>` forces a specific upstream key. Use it for listings like `GET /v1/files`, which only show one organization's resources.
@@ -243,11 +245,29 @@ Things to know:
 
 **Requests:** only the credentials. The client's key is replaced with a pool key, and any `oauth-*` beta flag is dropped, because upstream gets an API key. The body is forwarded byte-for-byte. The proxy reads it only for routing hints: model, `stream`, and resource ids.
 
+Every other client header is forwarded unchanged, apart from hop-by-hop headers, `accept-encoding` and the proxy's own `x-proxy-*` headers. The easiest way to change that is the **Headers** tab in the web UI. Settings saved there are stored in the database and replace the config file's `[headers]` section (and `CKR_HEADERS`) until you press **Reset to config file**. In the config file, minimal mode is:
+
+```toml
+[headers]
+mode = "minimal"                # or CKR_HEADERS=minimal
+```
+
+Minimal mode forwards `anthropic-*` headers (version, betas, workspace), `content-type` and `accept`, and drops everything else, such as `user-agent`, `x-stainless-*` and other client tags. Beta flags are all kept, so features the request body uses keep working. To forward an extra header, add it to `keep`. To drop specific headers or beta flags in either mode:
+
+```toml
+[headers]
+keep = ["x-request-tag"]        # minimal mode only
+drop = ["x-stainless-*"]        # header names, case-insensitive; trailing * = prefix
+drop_betas = ["some-beta-*"]    # anthropic-beta values; the rest of the header is kept
+```
+
+Credentials are always stripped, whatever this section says. `anthropic-version`, `content-type` and `anthropic-workspace-id` are always forwarded when the client sends them: the proxy refuses to start if a `drop` pattern matches one of them. The proxy adds no `User-Agent` of its own, so dropping `user-agent` sends the request without one. Dropping a beta that the request body relies on makes the API reject the request.
+
 **Responses:** passed through as-is, with two exceptions:
 - `x-proxy-*` headers are added (`x-proxy-request-id`, `x-proxy-upstream-key`, `x-proxy-attempts`, `x-proxy-cost-usd`).
 - Batch objects get their `results_url` rewritten to point back at the proxy (see below).
 
-**Prompt caching** is whatever the client sends (`cache_control`). The proxy doesn't add any. Caches are per organization, so sticky routing is what keeps a conversation's cache hits working across a pool. The cache-hit column in **Activity** shows the result.
+**Prompt caching** is whatever the client sends (`cache_control`). The proxy doesn't add any. Caches are per workspace (and so never cross organizations), so sticky routing is what keeps a conversation's cache hits working across a pool. The cache-hit column in **Activity** shows the result.
 
 ### Batches and `results_url`
 
@@ -272,6 +292,9 @@ The UI uses these endpoints. They require `x-api-key: <admin token>`.
 | `DELETE /proxy/admin/clients/{name}` | Remove |
 | `GET /proxy/admin/requests?limit=50` | Recent requests |
 | `GET /proxy/admin/credit-periods?key=<name>&limit=100` | Credit history: funded periods, newest first, with spend and request counts |
+| `GET /proxy/admin/headers` | Header rules, where they come from, and the header names and beta flags clients have sent (names only) |
+| `PUT /proxy/admin/headers` `{"mode", "keep", "drop", "drop_betas"}` | Save header rules (applied immediately, stored in the database) |
+| `DELETE /proxy/admin/headers` | Forget the saved rules and go back to the config file |
 | `GET /proxy/usage?group_by=key\|client\|model\|day&since=<unix>` | Token and cost totals. Clients see their own. |
 | `GET /proxy/requests/{id}` | One request. Clients see their own. |
 | `GET /proxy/me` | The calling client's spend and budget |

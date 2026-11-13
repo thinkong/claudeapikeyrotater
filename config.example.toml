@@ -38,3 +38,16 @@ max_buffer_bytes = 67108864    # larger bodies stream through without failover
 connect_timeout_secs = 10
 read_timeout_secs = 900        # max silence between bytes; no total timeout (long streams are fine)
 pin_retention_days = 90
+
+# Request headers. Credentials (x-api-key, authorization, proxy-authorization), hop-by-hop
+# headers, accept-encoding, x-proxy-* and oauth-* betas are always removed.
+#   mode = "all"      forward every other client header (default)
+#   mode = "minimal"  forward only what the API reads: anthropic-*, content-type, accept.
+#                     Client tags like user-agent and x-stainless-* are dropped.
+# Names are case-insensitive; a trailing * matches a prefix.
+# anthropic-version, content-type and anthropic-workspace-id can't be dropped.
+[headers]
+mode = "all"                   # or "minimal" (env: CKR_HEADERS)
+keep = []                      # minimal mode: extra headers to forward, e.g. ["x-request-tag"]
+drop = []                      # e.g. ["x-stainless-*"]
+drop_betas = []                # anthropic-beta values to remove, e.g. ["some-beta-*"]; "*" drops the header

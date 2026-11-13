@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +41,93 @@ pub struct Config {
     pub cooldowns: Cooldowns,
     #[serde(default)]
     pub routing: RoutingCfg,
+    #[serde(default)]
+    pub headers: HeadersCfg,
+}
+
+/// Which client headers are forwarded upstream. Credentials, hop-by-hop headers, `x-proxy-*`,
+/// `accept-encoding` and `oauth-*` betas are always removed, whatever the mode.
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[serde(deny_unknown_fields, default)]
+pub struct HeadersCfg {
+    /// `all` (default): forward every other client header. `minimal`: forward only what the API
+    /// reads (`anthropic-*`, `content-type`, `accept`) plus anything listed in `keep`.
+    pub mode: HeaderMode,
+    /// In `minimal` mode, extra header names to forward. A trailing `*` matches a prefix.
+    pub keep: Vec<String>,
+    /// Header names to drop (case-insensitive). A trailing `*` matches a prefix, e.g. `x-stainless-*`.
+    pub drop: Vec<String>,
+    /// `anthropic-beta` values to drop; the rest of the header is kept. A trailing `*` matches a
+    /// prefix, and `*` alone drops the whole header.
+    pub drop_betas: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum HeaderMode {
+    #[default]
+    All,
+    Minimal,
+}
+
+/// Headers forwarded in `minimal` mode: everything the API itself reads.
+pub const MINIMAL_HEADERS: [&str; 3] = ["anthropic-*", "content-type", "accept"];
+
+impl HeadersCfg {
+    /// Whether a client header (already lowercase, not a credential) goes upstream.
+    pub fn forwards(&self, name: &str) -> bool {
+        if self.drop.iter().any(|p| pattern_matches(p, name)) {
+            return false;
+        }
+        match self.mode {
+            HeaderMode::All => true,
+            HeaderMode::Minimal => {
+                MINIMAL_HEADERS.iter().any(|p| pattern_matches(p, name)) || self.keep.iter().any(|p| pattern_matches(p, name))
+            }
+        }
+    }
+}
+
+/// Headers the API needs to accept or place a request. `headers.drop` may not match these.
+pub const PROTECTED_HEADERS: [&str; 3] = ["anthropic-version", "content-type", "anthropic-workspace-id"];
+
+impl HeadersCfg {
+    /// Lowercase the patterns and reject invalid ones, including any that would drop a protected header.
+    pub fn validate(&mut self) -> Result<()> {
+        for p in self.drop.iter_mut().chain(self.drop_betas.iter_mut()).chain(self.keep.iter_mut()) {
+            *p = p.trim().to_ascii_lowercase();
+        }
+        for p in &self.keep {
+            let base = p.strip_suffix('*').unwrap_or(p);
+            if base.is_empty() || base.contains('*') || axum::http::HeaderName::from_bytes(base.as_bytes()).is_err() {
+                bail!("headers.keep: invalid header name pattern {p:?}");
+            }
+        }
+        for p in &self.drop {
+            let base = p.strip_suffix('*').unwrap_or(p);
+            if base.is_empty() || base.contains('*') || axum::http::HeaderName::from_bytes(base.as_bytes()).is_err() {
+                bail!("headers.drop: invalid header name pattern {p:?}");
+            }
+            if let Some(h) = PROTECTED_HEADERS.iter().find(|h| pattern_matches(p, h)) {
+                bail!("headers.drop: {p:?} would drop {h}, which the API requires");
+            }
+        }
+        for p in &self.drop_betas {
+            let base = p.strip_suffix('*').unwrap_or(p);
+            if (base.is_empty() && p != "*") || base.contains('*') || base.contains(',') || base.contains(char::is_whitespace) {
+                bail!("headers.drop_betas: invalid beta pattern {p:?}");
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A name pattern: exact match, or prefix match when written with a trailing `*`.
+pub fn pattern_matches(pattern: &str, name: &str) -> bool {
+    match pattern.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => name == pattern,
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -197,9 +284,17 @@ impl Config {
         if let Some(v) = env("CKR_PUBLIC_URL") {
             cfg.public_url = Some(v);
         }
+        if let Some(v) = env("CKR_HEADERS") {
+            cfg.headers.mode = match v.to_ascii_lowercase().as_str() {
+                "all" => HeaderMode::All,
+                "minimal" => HeaderMode::Minimal,
+                _ => bail!("CKR_HEADERS must be \"all\" or \"minimal\", got {v:?}"),
+            };
+        }
         if cfg.routing.max_attempts == 0 {
             bail!("routing.max_attempts must be at least 1");
         }
+        cfg.headers.validate()?;
         Ok(cfg)
     }
 
@@ -243,5 +338,59 @@ impl Config {
             out.push(SeedClient { name: c.name.clone(), token, budget_usd: c.budget_usd });
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(drop: &[&str], betas: &[&str]) -> HeadersCfg {
+        HeadersCfg {
+            drop: drop.iter().map(|s| s.to_string()).collect(),
+            drop_betas: betas.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn header_patterns_are_normalised() {
+        let mut c = cfg(&[" X-Stainless-* ", "User-Agent"], &["Some-Beta-*", "*"]);
+        c.validate().unwrap();
+        assert_eq!(c.drop, ["x-stainless-*", "user-agent"]);
+        assert_eq!(c.drop_betas, ["some-beta-*", "*"]);
+    }
+
+    #[test]
+    fn protected_headers_cannot_be_dropped() {
+        for p in ["anthropic-version", "Content-Type", "anthropic-workspace-id", "anthropic-*", "content-*", "anthropic-w*"] {
+            let err = cfg(&[p], &[]).validate().unwrap_err().to_string();
+            assert!(err.contains("which the API requires"), "{p}: {err}");
+        }
+        // Neighbouring names are still allowed.
+        cfg(&["anthropic-dangerous-direct-browser-access", "content-md5"], &[]).validate().unwrap();
+    }
+
+    #[test]
+    fn minimal_mode_forwards_only_api_headers() {
+        let mut c = HeadersCfg { mode: HeaderMode::Minimal, keep: vec!["X-Request-Tag".into()], ..Default::default() };
+        c.validate().unwrap();
+        for h in ["anthropic-version", "anthropic-beta", "anthropic-workspace-id", "content-type", "accept", "x-request-tag"] {
+            assert!(c.forwards(h), "{h} should be forwarded");
+        }
+        for h in ["user-agent", "x-stainless-os", "x-app", "referer"] {
+            assert!(!c.forwards(h), "{h} should be dropped");
+        }
+        assert!(HeadersCfg::default().forwards("user-agent"));
+    }
+
+    #[test]
+    fn invalid_patterns_are_rejected() {
+        assert!(cfg(&["*"], &[]).validate().is_err());
+        assert!(cfg(&["bad name"], &[]).validate().is_err());
+        assert!(cfg(&["a*b*"], &[]).validate().is_err());
+        assert!(cfg(&[], &["a,b"]).validate().is_err());
+        assert!(cfg(&[], &["a b"]).validate().is_err());
+        assert!(HeadersCfg { keep: vec!["*".into()], ..Default::default() }.validate().is_err());
     }
 }

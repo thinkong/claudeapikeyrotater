@@ -29,6 +29,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/admin/clients/{name}/rotate", post(rotate_client))
         .route("/admin/requests", get(recent_requests))
         .route("/admin/credit-periods", get(credit_periods))
+        .route("/admin/headers", get(get_headers).put(put_headers).delete(reset_headers))
 }
 
 enum Caller {
@@ -400,5 +401,32 @@ async fn rotate_client(State(st): State<Arc<AppState>>, h: HeaderMap, Path(name)
     match st.pool.rotate_client(&name) {
         Ok(token) => Json(json!({"ok": true, "name": name, "token": token})).into_response(),
         Err(e) => api_error(StatusCode::NOT_FOUND, "not_found_error", &e.to_string()),
+    }
+}
+
+// ------------------------------------------------------------------- header rules
+
+async fn get_headers(State(st): State<Arc<AppState>>, h: HeaderMap) -> Response {
+    admin!(st, h);
+    Json(st.headers.describe()).into_response()
+}
+
+async fn put_headers(State(st): State<Arc<AppState>>, h: HeaderMap, Json(body): Json<Value>) -> Response {
+    admin!(st, h);
+    let cfg: crate::config::HeadersCfg = match serde_json::from_value(body) {
+        Ok(c) => c,
+        Err(e) => return bad_request(e),
+    };
+    match st.headers.save(cfg, &st.store) {
+        Ok(()) => Json(st.headers.describe()).into_response(),
+        Err(e) => bad_request(e),
+    }
+}
+
+async fn reset_headers(State(st): State<Arc<AppState>>, h: HeaderMap) -> Response {
+    admin!(st, h);
+    match st.headers.reset(&st.store) {
+        Ok(()) => Json(st.headers.describe()).into_response(),
+        Err(e) => internal(e),
     }
 }

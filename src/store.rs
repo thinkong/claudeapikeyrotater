@@ -334,6 +334,11 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_setting(&self, k: &str) -> Result<()> {
+        self.read.lock().execute("DELETE FROM settings WHERE k = ?1", params![k])?;
+        Ok(())
+    }
+
     pub fn start_writer(&self, on_insert: OnInsert) -> Result<()> {
         let rx = self.rx.lock().take().context("writer already started")?;
         let conn = Connection::open(&self.path)?;

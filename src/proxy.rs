@@ -1,7 +1,7 @@
 //! The catch-all proxy handler: authenticates the client, picks an upstream key,
 //! forwards the request (failing over between keys when that is safe), and meters cost.
 
-use crate::config::Affinity;
+use crate::config::{pattern_matches, Affinity, HeadersCfg};
 use crate::pool::{round6, ClientAuth, Picked, Unavailable};
 use crate::pricing::Usage;
 use crate::store::RequestRow;
@@ -64,7 +64,7 @@ pub fn find_client(st: &AppState, headers: &HeaderMap) -> Option<ClientAuth> {
     st.pool.authenticate(client_token(headers)?)
 }
 
-fn skip_request_header(name: &str) -> bool {
+pub(crate) fn skip_request_header(name: &str) -> bool {
     matches!(
         name,
         "host"
@@ -88,11 +88,11 @@ fn skip_response_header(name: &str, keep_length: bool) -> bool {
         || (!keep_length && (name == "content-length" || name == "content-encoding"))
 }
 
-fn upstream_headers(incoming: &HeaderMap) -> HeaderMap {
+fn upstream_headers(incoming: &HeaderMap, extra: &HeadersCfg) -> HeaderMap {
     let mut out = HeaderMap::new();
     for (name, value) in incoming {
         let n = name.as_str();
-        if skip_request_header(n) {
+        if skip_request_header(n) || !extra.forwards(n) {
             continue;
         }
         if n == "anthropic-beta" {
@@ -102,7 +102,10 @@ fn upstream_headers(incoming: &HeaderMap) -> HeaderMap {
                 .unwrap_or("")
                 .split(',')
                 .map(str::trim)
-                .filter(|b| !b.is_empty() && !b.starts_with("oauth-"))
+                .filter(|b| {
+                    let lb = b.to_ascii_lowercase();
+                    !b.is_empty() && !lb.starts_with("oauth-") && !extra.drop_betas.iter().any(|p| pattern_matches(p, &lb))
+                })
                 .collect();
             if !kept.is_empty() {
                 if let Ok(v) = HeaderValue::from_str(&kept.join(",")) {
@@ -408,7 +411,8 @@ pub async fn handle(State(st): State<Arc<AppState>>, req: Request) -> Response {
     let affinity = affinity_key(st.cfg.routing.affinity, &client_name, kind, json_body.as_ref(), &parts.headers);
     let can_failover = pinned.is_none() && matches!(body, Body0::Buffered(_));
     let max_attempts = if can_failover { st.cfg.routing.max_attempts } else { 1 };
-    let base_headers = upstream_headers(&parts.headers);
+    st.headers.observe(&parts.headers, started);
+    let base_headers = upstream_headers(&parts.headers, &st.headers.current());
 
     let mut row = RequestRow {
         request_id: rid.clone(),
@@ -667,9 +671,72 @@ mod tests {
         h.insert("anthropic-beta", HeaderValue::from_static("oauth-2025-04-20, files-api-2025-04-14"));
         h.insert("x-api-key", HeaderValue::from_static("client"));
         h.insert("x-proxy-key", HeaderValue::from_static("a"));
-        let out = upstream_headers(&h);
+        let out = upstream_headers(&h, &HeadersCfg::default());
         assert_eq!(out.get("anthropic-beta").unwrap(), "files-api-2025-04-14");
         assert!(out.get("x-api-key").is_none());
         assert!(out.get("x-proxy-key").is_none());
+    }
+
+    fn sample_headers() -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("anthropic-beta", HeaderValue::from_static("a-2025-01-01,b-2025-02-02, c-2025-03-03"));
+        h.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        h.insert("user-agent", HeaderValue::from_static("my-app/1.0"));
+        h.insert("x-stainless-os", HeaderValue::from_static("Linux"));
+        h.insert("x-stainless-arch", HeaderValue::from_static("x64"));
+        h.insert("x-app", HeaderValue::from_static("cli"));
+        h.insert("authorization", HeaderValue::from_static("Bearer client"));
+        h
+    }
+
+    #[test]
+    fn default_forwards_everything_but_credentials() {
+        let out = upstream_headers(&sample_headers(), &HeadersCfg::default());
+        for n in ["anthropic-version", "user-agent", "x-stainless-os", "x-stainless-arch", "x-app"] {
+            assert!(out.get(n).is_some(), "{n} should be forwarded");
+        }
+        assert_eq!(out.get("anthropic-beta").unwrap(), "a-2025-01-01,b-2025-02-02,c-2025-03-03");
+        assert!(out.get("authorization").is_none());
+    }
+
+    #[test]
+    fn configured_headers_and_betas_are_dropped() {
+        let cfg = HeadersCfg {
+            drop: vec!["x-stainless-*".into(), "x-app".into()],
+            drop_betas: vec!["b-*".into(), "c-2025-03-03".into()],
+            ..Default::default()
+        };
+        let out = upstream_headers(&sample_headers(), &cfg);
+        assert!(out.get("x-stainless-os").is_none());
+        assert!(out.get("x-stainless-arch").is_none());
+        assert!(out.get("x-app").is_none());
+        assert!(out.get("user-agent").is_some());
+        assert_eq!(out.get("anthropic-beta").unwrap(), "a-2025-01-01");
+
+        let all = HeadersCfg { drop_betas: vec!["*".into()], ..Default::default() };
+        assert!(upstream_headers(&sample_headers(), &all).get("anthropic-beta").is_none());
+    }
+
+    #[test]
+    fn minimal_mode_keeps_api_headers_and_betas() {
+        let cfg = HeadersCfg { mode: crate::config::HeaderMode::Minimal, ..Default::default() };
+        let out = upstream_headers(&sample_headers(), &cfg);
+        assert_eq!(out.get("anthropic-version").unwrap(), "2023-06-01");
+        assert_eq!(out.get("anthropic-beta").unwrap(), "a-2025-01-01,b-2025-02-02,c-2025-03-03");
+        for n in ["user-agent", "x-stainless-os", "x-stainless-arch", "x-app", "authorization"] {
+            assert!(out.get(n).is_none(), "{n} should be dropped");
+        }
+    }
+
+    #[test]
+    fn credentials_are_stripped_even_with_empty_drop_list() {
+        let mut h = sample_headers();
+        h.insert("x-api-key", HeaderValue::from_static("client"));
+        h.insert("x-proxy-key", HeaderValue::from_static("k"));
+        h.insert("proxy-authorization", HeaderValue::from_static("x"));
+        let out = upstream_headers(&h, &HeadersCfg::default());
+        for n in ["x-api-key", "authorization", "x-proxy-key", "proxy-authorization"] {
+            assert!(out.get(n).is_none(), "{n} must never be forwarded");
+        }
     }
 }
