@@ -100,6 +100,10 @@ struct UsageQuery {
     since: Option<i64>,
     /// key | client | model | day (default model).
     group_by: Option<String>,
+    /// Optional second grouping (key | client | model), e.g. `group_by=day&split=model`.
+    split: Option<String>,
+    /// Minutes east of UTC for day buckets (browser: `-new Date().getTimezoneOffset()`).
+    tz_offset_min: Option<i64>,
     client: Option<String>,
 }
 
@@ -111,8 +115,12 @@ async fn usage(State(st): State<Arc<AppState>>, h: HeaderMap, Query(q): Query<Us
     };
     let since_ms = q.since.map(|s| s * 1000).unwrap_or_else(|| now_ms() - 30 * 86_400_000);
     let group_by = q.group_by.unwrap_or_else(|| "model".into());
+    let tz = q.tz_offset_min.unwrap_or(0);
     let st2 = st.clone();
-    let res = tokio::task::spawn_blocking(move || st2.store.usage_summary(since_ms, &group_by, client_filter.as_deref())).await;
+    let res = tokio::task::spawn_blocking(move || {
+        st2.store.usage_summary(since_ms, &group_by, q.split.as_deref(), tz, client_filter.as_deref())
+    })
+    .await;
     match res {
         Ok(Ok(v)) => Json(json!({"since_ms": since_ms, "rows": v})).into_response(),
         Ok(Err(e)) => bad_request(e),

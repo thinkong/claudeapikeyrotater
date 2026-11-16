@@ -9,6 +9,8 @@
   --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1c1a; --muted: #6d6a64; --line: #e4e1da;
   --accent: #c2562f; --accent-ink: #ffffff; --ok: #2f7d4f; --warn: #a86b12; --bad: #b3372b; --off: #8a867e;
   --ok-bg: #e5f2ea; --warn-bg: #f7ecd9; --bad-bg: #f6e1de; --off-bg: #ecebe7;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s-other: #a9a59d;
+  --grid: #eeece7;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -17,6 +19,8 @@
     --bg: #161514; --panel: #1f1e1c; --ink: #ecebe7; --muted: #9a968e; --line: #33312d;
     --accent: #e0774f; --accent-ink: #1a0f0a; --ok: #6cc391; --warn: #e2a84e; --bad: #ee7a6c; --off: #8a867e;
     --ok-bg: #1d3327; --warn-bg: #3a2d17; --bad-bg: #3d211d; --off-bg: #2a2926;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --s-other: #6d6a64;
+    --grid: #2b2a27;
   }
 }
 * { box-sizing: border-box; }
@@ -30,7 +34,8 @@ header { display: flex; align-items: center; gap: 16px; padding: 18px 0; border-
 .stat { display: flex; flex-direction: column; }
 .stat b { font-family: var(--mono); font-size: 16px; font-weight: 600; }
 .stat small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-nav { display: flex; gap: 4px; margin-bottom: 18px; }
+nav { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }
+nav button { white-space: nowrap; }
 nav button { background: none; border: 1px solid transparent; padding: 7px 14px; border-radius: 7px; cursor: pointer; color: var(--muted); }
 nav button.on { background: var(--panel); border-color: var(--line); color: var(--ink); font-weight: 600; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
@@ -92,6 +97,43 @@ pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); bor
 .fields { display: grid; gap: 12px; padding: 14px; }
 .fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .fields .row { display: flex; gap: 8px; justify-content: flex-end; }
+select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 6px 11px; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--bg); color: var(--ink); font-weight: 600; }
+.dash { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.dash .wide { grid-column: 1 / -1; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.kpi b { font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.kpi .delta { font-size: 12.5px; color: var(--muted); }
+.kpi .delta strong { color: var(--ink); font-weight: 600; }
+.kpi svg { margin-top: 8px; display: block; }
+.chart { padding: 6px 14px 12px; position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
+.chart text { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 14px 0; font-size: 12.5px; }
+.legend:empty { display: none; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.note { padding: 0 14px 12px; }
+.fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.fold .chev { color: var(--muted); transition: transform .15s; }
+.fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.panel:has(> .tablewrap[hidden]) > .bar { border-bottom: 0; }
+#tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 6px 24px rgb(0 0 0 / .14); min-width: 170px; display: none; }
+#tip .t { font-weight: 600; margin-bottom: 4px; }
+#tip .r { display: flex; align-items: center; gap: 8px; }
+#tip .r span { flex: 1; color: var(--muted); max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tip .r b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+#tip .r.tot { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+#tip i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+#tip i.ln { height: 2px; width: 12px; border-radius: 1px; }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) {
   .wrap { padding: 0 16px 40px; }
   .stats { margin-left: 0; gap: 16px; }
@@ -103,6 +145,7 @@ pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); bor
 <body>
 <div class="wrap" id="app"></div>
 <div id="toasts"></div>
+<div id="tip"></div>
 
 <dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
 
@@ -208,6 +251,7 @@ function start() {
       <button class="btn sm" id="logout">Sign out</button>
     </header>
     <nav id="tabs">
+      <button data-t="dashboard">Dashboard</button>
       <button data-t="keys">Upstream keys</button>
       <button data-t="clients">Client keys</button>
       <button data-t="headers">Headers</button>
@@ -227,11 +271,12 @@ async function refresh() {
     const st = await api("GET", "/proxy/status");
     state.keys = st.keys; state.clients = st.clients; state.status = st;
     if (tab === "headers") state.headers = await api("GET", "/proxy/admin/headers");
+    if (tab === "dashboard") await loadDashboard();
     if (tab === "activity") {
       const [req, use, per] = await Promise.all([
         api("GET", "/proxy/admin/requests?limit=60"),
         api("GET", "/proxy/usage?group_by=model"),
-        api("GET", "/proxy/admin/credit-periods?limit=40"),
+        api("GET", "/proxy/admin/credit-periods?limit=300"),
       ]);
       state.requests = req; state.usage = use.rows; state.periods = per;
     }
@@ -259,13 +304,308 @@ function renderView() {
   const view = $("#view");
   if (view.dataset.tab !== tab) {
     view.dataset.tab = tab;
-    if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else if (tab === "headers") headersSkeleton(); else view.innerHTML = "";
+    if (tab === "dashboard") dashSkeleton(); else if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else if (tab === "headers") headersSkeleton(); else view.innerHTML = "";
   }
-  if (tab === "keys") $("#keyTable").innerHTML = keysTable();
+  if (tab === "dashboard") renderDashboard();
+  else if (tab === "keys") $("#keyTable").innerHTML = keysTable();
   else if (tab === "clients") $("#clientTable").innerHTML = clientsTable();
   else if (tab === "headers") renderHeaders();
   else renderActivity();
 }
+
+// ------------------------------------------------------------- dashboard
+
+const SPLITS = { model: "Model", key: "Upstream key", client: "Client" };
+const SLOTS = 8;
+const dash = { days: Number(load("ckr_dash_days")) || 30, split: load("ckr_dash_split") || "model", rows: null, hover: false, pending: false };
+if (![7, 30, 90].includes(dash.days)) dash.days = 30;
+if (!SPLITS[dash.split]) dash.split = "model";
+const colorMaps = {}; // split -> Map(entity -> slot): a series keeps its color across refreshes and filters
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const dayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const dayLabel = (k, long) => new Date(k + "T00:00:00").toLocaleDateString([], long ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" });
+const compact = (v) => {
+  const a = Math.abs(v);
+  if (a >= 1e9) return +(v / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
+  if (a >= 1e6) return +(v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+  if (a >= 1e3) return +(v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+  return String(Math.round(v * 100) / 100);
+};
+const money = (v) => v >= 1000 ? "$" + compact(v) : v >= 100 ? "$" + v.toFixed(0) : v >= 1 ? "$" + v.toFixed(2) : v === 0 ? "$0" : "$" + v.toFixed(v < 0.01 ? 4 : 3);
+// Axis labels: exactly as many decimals as the tick step needs, so ticks never round into each other.
+const stepDecimals = (step) => { let d = 0; while (d < 8 && Math.abs(step * 10 ** d - Math.round(step * 10 ** d)) > 1e-9) d++; return d; };
+const moneyAxis = (v, step) => v >= 1000 ? money(v) : "$" + v.toFixed(stepDecimals(step));
+const trimZeros = (t) => t.replace(/(\.\d*?)0+(?=\D*$)/, "$1").replace(/\.(?=\D*$)/, "");
+const pct = (v) => v == null || !isFinite(v) ? "—" : (v * 100).toFixed(v < 0.1 ? 1 : 0) + "%";
+
+function dashRange() {
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - (dash.days - 1));
+  const days = [];
+  for (const d = new Date(start); days.length < dash.days; d.setDate(d.getDate() + 1)) days.push(dayKey(d));
+  return { start, days };
+}
+
+async function loadDashboard() {
+  const { start } = dashRange();
+  const split = dash.split, days = dash.days, want = `${split}/${days}/${dayKey(start)}`;
+  if (dash.rows && dash.loaded === want && Date.now() - dash.loadedAt < 30000) return; // the aggregate is cheap, but not free
+  dash.loaded = want; dash.loadedAt = Date.now();
+  const q = `group_by=day&split=${split}&since=${Math.floor(start.getTime() / 1000)}&tz_offset_min=${-new Date().getTimezoneOffset()}`;
+  const r = await api("GET", "/proxy/usage?" + q);
+  if (split !== dash.split || days !== dash.days) return; // controls changed while loading
+  dash.rows = r.rows; dash.rowsSplit = split;
+}
+
+function dashSkeleton() {
+  dash.hover = dash.pending = false; $("#tip").style.display = "none"; // a chart removed mid-hover never gets pointerleave
+  $("#view").innerHTML = `
+    <div class="panel" style="margin-bottom:18px">
+      <div class="bar" style="align-items:center">
+        <h2>Daily usage</h2>
+        <div class="seg" id="dRange">${[7, 30, 90].map((n) => `<button data-n="${n}">${n} days</button>`).join("")}</div>
+        <label style="flex-direction:row;align-items:center;gap:8px">Split cost by <select id="dSplit">${Object.entries(SPLITS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
+      </div>
+    </div>
+    <div class="kpis" id="dKpis"></div>
+    <div class="dash">
+      <div class="panel wide"><div class="bar"><h2>Cost per day</h2><span class="sub" id="dCostSub"></span></div><div class="legend" id="dCostLegend"></div><div class="chart" id="dCost"></div><div class="note sub" id="dUnpriced"></div></div>
+      <div class="panel"><div class="bar"><h2>Requests per day</h2></div><div class="legend" id="dReqLegend"></div><div class="chart" id="dReq"></div></div>
+      <div class="panel"><div class="bar"><h2>Tokens per day</h2></div><div class="legend" id="dTokLegend"></div><div class="chart" id="dTok"></div></div>
+      <div class="panel"><div class="bar"><h2>Cache hit rate</h2><span class="sub">cache reads ÷ all input tokens</span></div><div class="chart" id="dHit"></div></div>
+      <div class="panel"><div class="bar"><h2>Error rate</h2><span class="sub">responses with status ≥ 400</span></div><div class="chart" id="dErr"></div></div>
+      <div class="panel wide"><div class="bar"><h2>Day by day</h2><span class="sub">change is against the day before</span></div><div class="tablewrap" id="dTable"></div></div>
+    </div>`;
+  $("#dRange").onclick = (e) => {
+    const n = Number(e.target.dataset.n); if (!n || n === dash.days) return;
+    dash.days = n; store("ckr_dash_days", String(n)); syncDashControls(); refresh();
+  };
+  $("#dSplit").onchange = (e) => { dash.split = e.target.value; store("ckr_dash_split", dash.split); refresh(); };
+  syncDashControls();
+}
+
+function syncDashControls() {
+  for (const b of document.querySelectorAll("#dRange button")) b.classList.toggle("on", Number(b.dataset.n) === dash.days);
+  $("#dSplit").value = dash.split;
+}
+
+// Rows (day x entity) -> per-day totals and per-entity cost series, zero-filling idle days.
+function dashModel() {
+  const { days } = dashRange();
+  const idx = new Map(days.map((d, i) => [d, i]));
+  const tot = days.map(() => ({ requests: 0, errors: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, unpriced: 0 }));
+  const ent = new Map();
+  const split = dash.rowsSplit;
+  for (const r of dash.rows || []) {
+    const i = idx.get(r.day); if (i == null) continue;
+    const t = tot[i];
+    t.requests += r.requests; t.errors += r.errors; t.cost += r.cost_usd; t.unpriced += r.unpriced_requests;
+    t.input += r.input_tokens; t.output += r.output_tokens; t.cacheRead += r.cache_read_input_tokens;
+    t.cacheWrite += r.cache_write_5m_input_tokens + r.cache_write_1h_input_tokens;
+    const name = r[split] || (split === "model" ? "(no model)" : split === "key" ? "(no key)" : "(none)");
+    if (!ent.has(name)) ent.set(name, days.map(() => 0));
+    ent.get(name)[i] += r.cost_usd;
+  }
+  // Stable colors: an entity keeps its slot once it has one. Past 8 entities, the
+  // biggest 7 keep their own color and the rest fold into "Other".
+  const map = colorMaps[split] ||= new Map();
+  const ranked = [...ent].map(([name, v]) => ({ name, v, sum: v.reduce((a, x) => a + x, 0) })).filter((e) => e.sum > 0).sort((a, b) => b.sum - a.sum);
+  const room = ranked.length > SLOTS ? SLOTS - 1 : SLOTS;
+  const series = [], rest = [];
+  for (const e of ranked) {
+    if (series.length >= room) { rest.push(e); continue; }
+    if (!map.has(e.name)) {
+      const used = new Set(series.map((s) => s.slot).concat([...map.values()]));
+      let s = 1; while (s <= room && used.has(s)) s++;
+      if (s > room) { // all slots taken by entities not in view: recycle one of those
+        const inView = new Set(ranked.map((x) => x.name));
+        for (const [k, v] of map) if (!inView.has(k) && v <= room) { map.delete(k); s = v; break; }
+      }
+      if (s > room) { rest.push(e); continue; }
+      map.set(e.name, s);
+    }
+    const slot = map.get(e.name);
+    if (slot > room) { rest.push(e); continue; }
+    series.push({ label: e.name, slot, color: `var(--s${slot})`, values: e.v, sum: e.sum });
+  }
+  if (rest.length) series.push({ label: `Other (${rest.length})`, color: "var(--s-other)", values: days.map((_, i) => rest.reduce((a, e) => a + e.v[i], 0)), sum: rest.reduce((a, e) => a + e.sum, 0) });
+  return { days, tot, series };
+}
+
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
+  // steps chosen so a quarter of each is still a round tick value
+  return [1, 1.2, 1.6, 2, 2.4, 3, 4, 5, 6, 8, 10].find((s) => f <= s + 1e-9) * p;
+}
+
+// One chart on one y-scale: stacked bars and/or lines over the day axis, with hover.
+function drawChart(el, { days, bars = [], lines = [], fmt, axisFmt, integer = false, height = 210, max, tipRows }) {
+  const W = Math.max(260, el.clientWidth - 28), H = height, L = 46, R = 6, T = 8, B = 22;
+  const n = days.length, band = (W - L - R) / n;
+  const stackTop = days.map((_, i) => bars.reduce((a, s) => a + s.values[i], 0));
+  const lineMax = Math.max(0, ...lines.flatMap((s) => s.values.filter((v) => v != null)));
+  let ymax = max ?? niceMax(Math.max(...stackTop, lineMax));
+  if (integer) { ymax = Math.max(4, ymax); if (ymax % 4) ymax = Math.ceil(ymax / 4) * 4; } // whole-number ticks for counts
+  const y = (v) => T + (H - T - B) * (1 - v / ymax);
+  const x0 = (i) => L + i * band;
+  let g = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = ymax * k / 4, yy = y(v);
+    g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${k ? "var(--grid)" : "var(--line)"}" stroke-width="1"/>`;
+    g += `<text x="${L - 6}" y="${yy + 3.5}" text-anchor="end">${esc(trimZeros((axisFmt || fmt)(v, ymax / 4)))}</text>`;
+  }
+  const every = Math.ceil(n / Math.max(2, Math.floor((W - L) / 64)));
+  days.forEach((d, i) => {
+    if ((n - 1 - i) % every === 0) g += `<text x="${x0(i) + band / 2}" y="${H - 6}" text-anchor="middle">${esc(i === n - 1 ? "Today" : dayLabel(d))}</text>`;
+  });
+  const bw = Math.max(2, Math.min(28, band * 0.68)), gap = band < 6 ? 1 : 2;
+  days.forEach((_, i) => {
+    const live = bars.filter((s) => s.values[i] > 0);
+    const op = i === n - 1 ? ' fill-opacity="0.5"' : ""; // today is still filling up
+    let acc = 0;
+    live.forEach((s, j) => {
+      const v = s.values[i], top = y(acc + v), bot = y(acc) - (j ? gap : 0);
+      acc += v;
+      const h = bot - top, xx = x0(i) + (band - bw) / 2;
+      if (h <= 0.3) return;
+      if (j === live.length - 1) {
+        const r = Math.min(4, bw / 2, h);
+        g += `<path d="M${xx},${bot} V${top + r} Q${xx},${top} ${xx + r},${top} H${xx + bw - r} Q${xx + bw},${top} ${xx + bw},${top + r} V${bot} Z" fill="${s.color}"${op}/>`;
+      } else g += `<rect x="${xx}" y="${top}" width="${bw}" height="${h}" fill="${s.color}"${op}/>`;
+    });
+  });
+  for (const s of lines) {
+    let d = "", pen = false;
+    s.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${(x0(i) + band / 2).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    // lone points (a day with neighbours missing) would be invisible as a path
+    s.values.forEach((v, i) => { if (v != null && s.values[i - 1] == null && s.values[i + 1] == null) g += `<circle cx="${x0(i) + band / 2}" cy="${y(v)}" r="2.5" fill="${s.color}"/>`; });
+  }
+  g += `<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2" visibility="hidden"/><g class="dots"></g>`;
+  if (bars.length) g += `<rect class="hl" x="0" y="${T}" width="${band}" height="${H - T - B}" fill="var(--ink)" fill-opacity="0.05" visibility="hidden"/>`;
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">${g}</svg>`;
+  const svg = el.querySelector("svg"), xh = svg.querySelector(".xh"), dots = svg.querySelector(".dots"), hl = svg.querySelector(".hl");
+  const hide = () => {
+    $("#tip").style.display = "none"; xh.setAttribute("visibility", "hidden"); dots.innerHTML = ""; hl?.setAttribute("visibility", "hidden");
+    dash.hover = false;
+    if (dash.pending) { dash.pending = false; renderDashboard(); }
+  };
+  svg.onpointerleave = hide;
+  svg.onpointermove = (e) => {
+    const rect = svg.getBoundingClientRect(), px = (e.clientX - rect.left) * (W / rect.width);
+    const i = Math.floor((px - L) / band);
+    if (i < 0 || i >= n) return hide();
+    dash.hover = true;
+    const cx = x0(i) + band / 2;
+    if (hl) { hl.setAttribute("x", x0(i)); hl.setAttribute("visibility", "visible"); }
+    if (lines.length) {
+      xh.setAttribute("x1", cx); xh.setAttribute("x2", cx); xh.setAttribute("visibility", "visible");
+      dots.innerHTML = lines.filter((s) => s.values[i] != null).map((s) => `<circle cx="${cx}" cy="${y(s.values[i])}" r="4.5" fill="${s.color}" stroke="var(--panel)" stroke-width="2"/>`).join("");
+    }
+    const tip = $("#tip");
+    tip.innerHTML = `<div class="t">${esc(dayLabel(days[i], true))}${i === n - 1 ? " · so far" : ""}</div>` + tipRows(i);
+    tip.style.display = "block";
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let tx = e.clientX + 14;
+    if (tx + tw > innerWidth - 8) tx = e.clientX - tw - 14;
+    tip.style.left = Math.max(8, tx) + "px";
+    tip.style.top = Math.min(innerHeight - th - 8, Math.max(8, e.clientY - th / 2)) + "px";
+  };
+}
+
+const tipRow = (color, label, val, line) => `<div class="r">${color ? `<i class="${line ? "ln" : ""}" style="background:${color}"></i>` : `<i></i>`}<span>${esc(label)}</span><b>${esc(val)}</b></div>`;
+const tipTotal = (label, val) => `<div class="r tot"><i></i><span>${esc(label)}</span><b>${esc(val)}</b></div>`;
+const legend = (items) => items.map((s) => `<span title="${esc(s.label)}"><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join("");
+
+function sparkline(values, color) {
+  const W = 160, H = 28, max = Math.max(...values, 1e-9), n = values.length;
+  const pts = values.map((v, i) => `${((i / Math.max(1, n - 1)) * W).toFixed(1)},${(H - 2 - (H - 4) * (v / max)).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+
+function change(cur, prev) {
+  if (!prev) return cur ? "new" : "";
+  const c = (cur - prev) / prev;
+  if (Math.abs(c) < 0.0005) return "no change";
+  return (c > 0 ? "▲ +" : "▼ −") + Math.abs(c * 100).toFixed(Math.abs(c) < 0.1 ? 1 : 0) + "%";
+}
+
+function renderDashboard() {
+  if (!dash.rows || !$("#dKpis")) return;
+  if (dash.hover) { dash.pending = true; return; } // don't yank the chart from under the pointer
+  const { days, tot, series } = dashModel();
+  const n = days.length, Y = n - 2, P = n - 3; // yesterday is the last full day
+  const sum = (f) => tot.reduce((a, t) => a + f(t), 0);
+  const allIn = (t) => t.input + t.cacheRead + t.cacheWrite;
+  const totalCost = sum((t) => t.cost), totalReq = sum((t) => t.requests);
+  const hit = sum((t) => t.cacheRead) / (sum(allIn) || NaN), errRate = sum((t) => t.errors) / (totalReq || NaN);
+  const kpi = (label, value, sub, spark = "") => `<div class="panel kpi"><small>${label}</small><b>${value}</b><span class="delta">${sub}</span>${spark}</div>`;
+  const vs = `vs ${esc(dayLabel(days[P]))}`;
+  $("#dKpis").innerHTML =
+    kpi("Spend yesterday", money(tot[Y].cost), `<strong>${change(tot[Y].cost, tot[P].cost) || "no change"}</strong> ${vs} · today so far ${money(tot[n - 1].cost)}`, sparkline(tot.map((t) => t.cost), "var(--s1)")) +
+    kpi("Requests yesterday", int(tot[Y].requests), `<strong>${change(tot[Y].requests, tot[P].requests) || "no change"}</strong> ${vs} · today so far ${int(tot[n - 1].requests)}`, sparkline(tot.map((t) => t.requests), "var(--s1)")) +
+    kpi(`Spend, last ${n} days`, money(totalCost), `about <strong>${money(totalCost / n)}</strong> a day · ${int(totalReq)} requests`) +
+    kpi("Cache hit rate", pct(hit), totalReq ? `<strong>${pct(errRate)}</strong> of requests failed over ${n} days` : `no requests in the last ${n} days`);
+
+  $("#dCostSub").textContent = `split by ${SPLITS[dash.rowsSplit].toLowerCase()} · today's bar is partial`;
+  $("#dCostLegend").innerHTML = series.length > 1 ? legend(series) : "";
+  drawChart($("#dCost"), {
+    days, bars: series, fmt: money, axisFmt: moneyAxis, height: 240,
+    tipRows: (i) => series.filter((s) => s.values[i] > 0).map((s) => tipRow(s.color, s.label, money(s.values[i]))).join("") + tipTotal("Total", money(tot[i].cost)),
+  });
+  const unpriced = sum((t) => t.unpriced);
+  $("#dUnpriced").textContent = unpriced ? `${int(unpriced)} successful request${unpriced > 1 ? "s" : ""} in this range had no price (model not in the price table) and count as $0 here.` : "";
+  $("#dUnpriced").style.display = unpriced ? "" : "none";
+
+  const reqS = [{ label: "Succeeded", color: "var(--s1)", values: tot.map((t) => t.requests - t.errors) }, { label: "Errors (status ≥ 400)", color: "var(--s8)", values: tot.map((t) => t.errors) }];
+  $("#dReqLegend").innerHTML = legend(reqS);
+  drawChart($("#dReq"), {
+    days, bars: reqS, fmt: compact, integer: true,
+    tipRows: (i) => tipRow("var(--s1)", "Succeeded", int(reqS[0].values[i])) + tipRow("var(--s8)", "Errors", int(tot[i].errors)) + tipTotal("Total", int(tot[i].requests)),
+  });
+
+  const tokS = [
+    { label: "Input (uncached)", color: "var(--s1)", values: tot.map((t) => t.input) },
+    { label: "Cache read", color: "var(--s3)", values: tot.map((t) => t.cacheRead) },
+    { label: "Cache write", color: "var(--s4)", values: tot.map((t) => t.cacheWrite) },
+    { label: "Output", color: "var(--s2)", values: tot.map((t) => t.output) },
+  ];
+  $("#dTokLegend").innerHTML = legend(tokS);
+  drawChart($("#dTok"), {
+    days, bars: tokS, fmt: compact, integer: true,
+    tipRows: (i) => tokS.map((s) => tipRow(s.color, s.label, int(s.values[i]))).join("") + tipTotal("Total", int(allIn(tot[i]) + tot[i].output)),
+  });
+
+  const hitV = tot.map((t) => allIn(t) ? t.cacheRead / allIn(t) : null);
+  drawChart($("#dHit"), {
+    days, lines: [{ color: "var(--s3)", values: hitV }], fmt: (v) => Math.round(v * 100) + "%", max: 1, height: 170,
+    tipRows: (i) => tipRow("var(--s3)", "Cache hit", pct(hitV[i]), true) + tipRow("", "Cache read tokens", compact(tot[i].cacheRead)),
+  });
+  const errV = tot.map((t) => t.requests ? t.errors / t.requests : null);
+  drawChart($("#dErr"), {
+    days, lines: [{ color: "var(--s8)", values: errV }], fmt: (v) => +(v * 100).toFixed(1) + "%", height: 170,
+    max: niceMax(Math.max(0.01, ...errV.filter((v) => v != null))),
+    tipRows: (i) => tipRow("var(--s8)", "Error rate", pct(errV[i]), true) + tipRow("", "Errors", `${int(tot[i].errors)} of ${int(tot[i].requests)}`),
+  });
+
+  // idle days are left out of the table (the charts show the gaps); change is still against the calendar day before
+  const rows = days.map((d, i) => i).filter((i) => tot[i].requests || i === n - 1).reverse().map((i) => {
+    const t = tot[i], p = tot[i - 1];
+    const cng = (a, b) => i === 0 ? "" : `<div class="sub">${change(a, b)}</div>`;
+    return `<tr><td>${esc(dayLabel(days[i], true))}${i === n - 1 ? ` <span class="sub">· so far</span>` : ""}</td>
+      <td class="num">${money(t.cost)}${cng(t.cost, p?.cost)}</td>
+      <td class="num">${int(t.requests)}${cng(t.requests, p?.requests)}</td>
+      <td class="num">${compact(allIn(t))} / ${compact(t.output)}</td>
+      <td class="num">${pct(allIn(t) ? t.cacheRead / allIn(t) : null)}</td>
+      <td class="num">${int(t.errors)}</td></tr>`;
+  }).join("");
+  $("#dTable").innerHTML = totalReq ? `<table><thead><tr><th>Day</th><th class="num">Cost</th><th class="num">Requests</th><th class="num">Tokens in / out</th><th class="num">Cache hit</th><th class="num">Errors</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div class="empty">No traffic in the last ${n} days.</div>`;
+}
+
+let resizeT;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (tab === "dashboard") renderDashboard(); }, 150); });
 
 // ------------------------------------------------------------- upstream keys
 
@@ -645,31 +985,80 @@ function renderActivity() {
         <div class="bar"><h2>Last 30 days by model</h2></div>
         <div class="tablewrap">${state.usage.length ? `<table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Input tokens</th><th class="num">Output tokens</th><th class="num">Cache hit</th><th class="num">Cost</th></tr></thead><tbody>${useRows}</tbody></table>` : `<div class="empty">No traffic yet.</div>`}</div>
       </div>
-      <div class="panel">
-        <div class="bar"><h2>Credit history</h2></div>
-        <div class="tablewrap">${periodsTable(state.periods || [], true)}</div>
+      <div class="panel" id="creditHist">
+        <div class="bar"><h2><button class="fold" data-act="fold" aria-expanded="false"><svg class="chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Credit history</button></h2><span class="sub" id="chSummary"></span><button class="btn sm" data-act="all" hidden></button></div>
+        <div class="tablewrap"></div>
       </div>
       <div class="panel">
         <div class="bar"><h2>Recent requests</h2></div>
         <div class="tablewrap">${state.requests.length ? `<table><thead><tr><th>When</th><th>Client</th><th>Key</th><th>Request</th><th>Status</th><th class="num">Tokens in / out</th><th class="num">Cost</th></tr></thead><tbody>${reqRows}</tbody></table>` : `<div class="empty">No requests yet.</div>`}</div>
       </div>
     </div>`;
+  renderCreditHistory();
+  $("#creditHist").onclick = (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const keys = groupPeriods(state.periods || []).filter((g) => g.rows.length > 1).map((g) => g.key);
+    if (b.dataset.act === "fold") {
+      creditOpen = !creditOpen; store("ckr_credit_open", creditOpen ? "1" : "0");
+    } else if (b.dataset.act === "all") {
+      const open = keys.some((k) => !expandedKeys.has(k));
+      for (const k of keys) open ? expandedKeys.add(k) : expandedKeys.delete(k);
+    } else expandedKeys.has(b.dataset.key) ? expandedKeys.delete(b.dataset.key) : expandedKeys.add(b.dataset.key);
+    renderCreditHistory();
+  };
 }
 
 // ------------------------------------------------------------- credit history
 
+let creditOpen = load("ckr_credit_open") === "1"; // whole panel; starts folded
+const expandedKeys = new Set(); // keys whose earlier credit periods are shown; survives the 5 s refresh
+
+function groupPeriods(rows) {
+  const by = new Map();
+  for (const p of rows) { if (!by.has(p.key)) by.set(p.key, []); by.get(p.key).push(p); } // rows arrive newest first
+  return [...by].map(([key, rows]) => ({ key, rows }));
+}
+
+function renderCreditHistory() {
+  const box = $("#creditHist"); if (!box) return;
+  const groups = groupPeriods(state.periods || []);
+  const multi = groups.filter((g) => g.rows.length > 1);
+  const fold = box.querySelector("button[data-act=fold]");
+  fold.setAttribute("aria-expanded", creditOpen);
+  const total = groups.reduce((a, g) => a + g.rows.length, 0);
+  $("#chSummary").textContent = !total ? "" : creditOpen ? "latest period per key"
+    : `${groups.length} key${groups.length > 1 ? "s" : ""} · ${total} period${total > 1 ? "s" : ""} · ${groups.filter((g) => !g.rows[0].ended_ms).length} funded now`;
+  box.querySelector(".tablewrap").hidden = !creditOpen;
+  const all = box.querySelector("button[data-act=all]");
+  all.hidden = !creditOpen || !multi.length;
+  all.textContent = multi.some((g) => !expandedKeys.has(g.key)) ? "Expand all" : "Collapse all";
+  if (!groups.length) { box.querySelector(".tablewrap").innerHTML = `<div class="empty">No credit history yet.</div>`; return; }
+  const body = groups.map(({ key, rows }) => {
+    const open = expandedKeys.has(key), earlier = rows.length - 1;
+    const done = rows.filter((p) => p.ended_ms && p.end_reason === "out of credits");
+    const avg = done.length ? done.reduce((a, p) => a + p.spend_usd, 0) / done.length : null;
+    const keyCell = `<td><div class="name">${esc(key)}</div>
+      <div class="sub">${rows.length} period${rows.length > 1 ? "s" : ""}${avg != null ? ` · avg ${usd(avg, 2)} per refill` : ""}</div>
+      ${earlier ? `<button class="btn sm" data-key="${esc(key)}" data-act="toggle" aria-expanded="${open}" style="margin-top:4px">${open ? "▾ Hide earlier" : `▸ ${earlier} earlier`}</button>` : ""}</td>`;
+    return periodRow(rows[0], keyCell) + (open ? rows.slice(1).map((p) => periodRow(p, `<td></td>`, true)).join("") : "");
+  }).join("");
+  box.querySelector(".tablewrap").innerHTML = `<table><thead><tr><th>Key</th><th>Funded from</th><th>Until</th><th class="num">Lasted</th><th class="num">Used</th><th class="num">Requests</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function periodRow(p, firstCell, nested) {
+  const refill = (p.start_reason || "").startsWith("refill")
+    ? `<div>${when(p.started_ms)}</div><div class="sub">${p.refilled_after_ms ? "refilled after " + when(p.refilled_after_ms) : esc(p.start_reason)}</div>`
+    : `<div>${when(p.started_ms)}</div><div class="sub">${esc(p.start_reason)}</div>`;
+  const end = p.ended_ms
+    ? `<div>${when(p.ended_ms)}</div><div class="sub">${esc(p.end_reason)}</div>`
+    : `<span class="pill ok">Funded now</span>`;
+  return `<tr${nested ? ' style="background:var(--bg)"' : ""}>${firstCell}<td>${refill}</td><td>${end}</td>
+    <td class="num">${span(p.started_ms, p.ended_ms)}</td><td class="num">${usd(p.spend_usd)}</td><td class="num">${int(p.requests)}</td></tr>`;
+}
+
 function periodsTable(rows, withKey) {
   if (!rows.length) return `<div class="empty">No credit history yet.</div>`;
-  const body = rows.map((p) => {
-    const refill = (p.start_reason || "").startsWith("refill")
-      ? `<div>${when(p.started_ms)}</div><div class="sub">${p.refilled_after_ms ? "refilled after " + when(p.refilled_after_ms) : esc(p.start_reason)}</div>`
-      : `<div>${when(p.started_ms)}</div><div class="sub">${esc(p.start_reason)}</div>`;
-    const end = p.ended_ms
-      ? `<div>${when(p.ended_ms)}</div><div class="sub">${esc(p.end_reason)}</div>`
-      : `<span class="pill ok">Funded now</span>`;
-    return `<tr>${withKey ? `<td class="name">${esc(p.key)}</td>` : ""}<td>${refill}</td><td>${end}</td>
-      <td class="num">${span(p.started_ms, p.ended_ms)}</td><td class="num">${usd(p.spend_usd)}</td><td class="num">${int(p.requests)}</td></tr>`;
-  }).join("");
+  const body = rows.map((p) => periodRow(p, withKey ? `<td class="name">${esc(p.key)}</td>` : "")).join("");
   return `<table><thead><tr>${withKey ? "<th>Key</th>" : ""}<th>Funded from</th><th>Until</th><th class="num">Lasted</th><th class="num">Used</th><th class="num">Requests</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 

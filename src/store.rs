@@ -434,36 +434,62 @@ impl Store {
     }
 
     /// Aggregated usage since `since_ms`, grouped by one of key|client|model|day.
-    pub fn usage_summary(&self, since_ms: i64, group_by: &str, client: Option<&str>) -> Result<Value> {
-        let col = match group_by {
-            "key" => "COALESCE(key_name, '')",
-            "client" => "client",
-            "model" => "COALESCE(model, '')",
-            "day" => "strftime('%Y-%m-%d', ts_ms / 1000, 'unixepoch')",
-            _ => anyhow::bail!("group_by must be key, client, model or day"),
+    /// `split` (key|client|model) adds a second grouping column, e.g. day x model for charts.
+    /// `tz_offset_min` shifts the day buckets into the caller's local time (minutes east of UTC).
+    pub fn usage_summary(
+        &self,
+        since_ms: i64,
+        group_by: &str,
+        split: Option<&str>,
+        tz_offset_min: i64,
+        client: Option<&str>,
+    ) -> Result<Value> {
+        let column = |g: &str| -> Result<&'static str> {
+            Ok(match g {
+                "key" => "COALESCE(key_name, '')",
+                "client" => "client",
+                "model" => "COALESCE(model, '')",
+                "day" => "strftime('%Y-%m-%d', (ts_ms / 1000) + ?3 * 60, 'unixepoch')",
+                _ => anyhow::bail!("group_by must be key, client, model or day"),
+            })
         };
+        let col = column(group_by)?;
+        let split = match split {
+            None | Some("") => None,
+            Some(s) if s == group_by || s == "day" => anyhow::bail!("split must be key, client or model and differ from group_by"),
+            Some(s) => Some((s.to_string(), column(s)?)),
+        };
+        let split_col = split.as_ref().map(|(_, c)| *c).unwrap_or("''");
+        let tz = tz_offset_min.clamp(-16 * 60, 16 * 60);
+        // `?3 = ?3` keeps ?3 bound when the day column (its only other use) is not selected.
         let sql = format!(
-            "SELECT {col} AS k, COUNT(*), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
+            "SELECT {col} AS k, {split_col} AS s, COUNT(*), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens),
                     SUM(cache_write_5m_tokens), SUM(cache_write_1h_tokens), SUM(web_search_requests),
-                    COALESCE(SUM(cost_usd), 0), SUM(CASE WHEN cost_usd IS NULL AND model IS NOT NULL AND status < 300 THEN 1 ELSE 0 END)
-             FROM requests WHERE ts_ms >= ?1 AND (?2 IS NULL OR client = ?2) GROUP BY k ORDER BY k"
+                    COALESCE(SUM(cost_usd), 0), SUM(CASE WHEN cost_usd IS NULL AND model IS NOT NULL AND status < 300 THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END)
+             FROM requests WHERE ts_ms >= ?1 AND (?2 IS NULL OR client = ?2) AND ?3 = ?3 GROUP BY k, s ORDER BY k, s"
         );
         let c = self.read.lock();
         let mut st = c.prepare(&sql)?;
         let rows = st
-            .query_map(params![since_ms, client], |r| {
-                Ok(json!({
+            .query_map(params![since_ms, client, tz], |r| {
+                let mut v = json!({
                     group_by: r.get::<_, String>(0)?,
-                    "requests": r.get::<_, i64>(1)?,
-                    "input_tokens": r.get::<_, i64>(2)?,
-                    "output_tokens": r.get::<_, i64>(3)?,
-                    "cache_read_input_tokens": r.get::<_, i64>(4)?,
-                    "cache_write_5m_input_tokens": r.get::<_, i64>(5)?,
-                    "cache_write_1h_input_tokens": r.get::<_, i64>(6)?,
-                    "web_search_requests": r.get::<_, i64>(7)?,
-                    "cost_usd": r.get::<_, f64>(8)?,
-                    "unpriced_requests": r.get::<_, i64>(9)?,
-                }))
+                    "requests": r.get::<_, i64>(2)?,
+                    "input_tokens": r.get::<_, i64>(3)?,
+                    "output_tokens": r.get::<_, i64>(4)?,
+                    "cache_read_input_tokens": r.get::<_, i64>(5)?,
+                    "cache_write_5m_input_tokens": r.get::<_, i64>(6)?,
+                    "cache_write_1h_input_tokens": r.get::<_, i64>(7)?,
+                    "web_search_requests": r.get::<_, i64>(8)?,
+                    "cost_usd": r.get::<_, f64>(9)?,
+                    "unpriced_requests": r.get::<_, i64>(10)?,
+                    "errors": r.get::<_, i64>(11)?,
+                });
+                if let Some((name, _)) = &split {
+                    v[name.as_str()] = json!(r.get::<_, String>(1)?);
+                }
+                Ok(v)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(Value::Array(rows))

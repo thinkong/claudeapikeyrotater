@@ -105,10 +105,11 @@ Things to know:
 
 | Tab | What you can do |
 |---|---|
+| **Dashboard** | Daily charts over the last 7, 30 or 90 days, in your local time: cost per day split by model, upstream key or client; requests and errors; tokens (input, cache read, cache write, output); cache-hit and error rates. Tiles compare yesterday with the day before, and a day-by-day table shows each day's change. Today's bar is partial. |
 | **Upstream keys** | Add a key (checked immediately). See each key's state: available, cooling down (rate limit), out of credits (with time until retry), invalid, or disabled. See estimated credit left, spend and last use. |
 | **Client keys** | Create a key (shown once, only its hash is stored). See spend vs. budget. |
 | **Headers** | Choose **Forward all** or **Minimal** header forwarding. See every header name and beta flag clients have sent since the proxy started, what happens to each, and drop or forward it with one click. Changes apply to the next request. |
-| **Activity** | Last 30 days by model, including cache-hit rate and cost. Credit history across all keys. Recent requests with key, status, tokens and cost. |
+| **Activity** | Last 30 days by model, including cache-hit rate and cost. Credit history across all keys, folded to a one-line summary until you open it; inside, the latest period per key with earlier ones a click away. Recent requests with key, status, tokens and cost. |
 
 Row buttons on **Upstream keys**:
 
@@ -295,7 +296,7 @@ The UI uses these endpoints. They require `x-api-key: <admin token>`.
 | `GET /proxy/admin/headers` | Header rules, where they come from, and the header names and beta flags clients have sent (names only) |
 | `PUT /proxy/admin/headers` `{"mode", "keep", "drop", "drop_betas"}` | Save header rules (applied immediately, stored in the database) |
 | `DELETE /proxy/admin/headers` | Forget the saved rules and go back to the config file |
-| `GET /proxy/usage?group_by=key\|client\|model\|day&since=<unix>` | Token and cost totals. Clients see their own. |
+| `GET /proxy/usage?group_by=key\|client\|model\|day&since=<unix>` | Token, error and cost totals. Clients see their own. Add `split=key\|client\|model` for a second grouping (e.g. per day per model) and `tz_offset_min=<minutes east of UTC>` to bucket days in local time. |
 | `GET /proxy/requests/{id}` | One request. Clients see their own. |
 | `GET /proxy/me` | The calling client's spend and budget |
 

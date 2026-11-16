@@ -377,6 +377,14 @@ def run_tests():
     check(len(recent) == 5 and recent[0]["ts_ms"] >= recent[-1]["ts_ms"], "recent requests feed for the UI")
     u = httpx.get(PROXY + "/proxy/usage?group_by=key", headers=ADMIN).json()
     check(len(u["rows"]) >= 2, "usage report grouped by key")
+    tz = 14 * 60  # far east of UTC, so the local day differs from the UTC one for part of every day
+    d = httpx.get(PROXY + f"/proxy/usage?group_by=day&split=model&tz_offset_min={tz}", headers=ADMIN).json()
+    local_today = time.strftime("%Y-%m-%d", time.gmtime(time.time() + tz * 60))
+    check(d["rows"] and all("model" in r and "errors" in r for r in d["rows"]) and any(r["day"] == local_today for r in d["rows"]),
+          "daily usage split by model, bucketed in the caller's time zone")
+    check(sum(r["requests"] for r in d["rows"]) == sum(r["requests"] for r in u["rows"]), "daily split rows add up to the totals")
+    bad = httpx.get(PROXY + "/proxy/usage?group_by=day&split=day", headers=ADMIN)
+    check(bad.status_code == 400, "split must differ from group_by")
     log = httpx.get(MOCK + "/mock/log").json()
     check(all(e["key"] not in (CLIENT, old, tmp) for e in log), "client tokens never forwarded upstream")
 
