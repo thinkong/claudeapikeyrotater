@@ -10,7 +10,10 @@
   --accent: #c2562f; --accent-ink: #ffffff; --ok: #2f7d4f; --warn: #a86b12; --bad: #b3372b; --off: #8a867e;
   --ok-bg: #e5f2ea; --warn-bg: #f7ecd9; --bad-bg: #f6e1de; --off-bg: #ecebe7;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s-other: #a9a59d;
+  /* neutral chart steps: everything a chart shows that is not the point of the chart */
+  --n1: #8c877e; --n2: #b3aea5; --n3: #d6d2ca;
   --grid: #eeece7;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -20,119 +23,156 @@
     --accent: #e0774f; --accent-ink: #1a0f0a; --ok: #6cc391; --warn: #e2a84e; --bad: #ee7a6c; --off: #8a867e;
     --ok-bg: #1d3327; --warn-bg: #3a2d17; --bad-bg: #3d211d; --off-bg: #2a2926;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --s-other: #6d6a64;
+    --n1: #9a968e; --n2: #77736b; --n3: #55524c;
     --grid: #2b2a27;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
-button, input { font: inherit; color: inherit; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px 60px; }
-header { display: flex; align-items: center; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--line); margin-bottom: 20px; flex-wrap: wrap; }
-.brand { font-family: var(--mono); font-weight: 650; letter-spacing: -0.02em; font-size: 15px; }
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3 { font-weight: 500; }
+.wrap { max-width: 1184px; margin: 0 auto; padding: 0 24px 64px; }
+header { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); margin-bottom: 20px; flex-wrap: wrap; }
+.brand { font-family: var(--mono); font-weight: 600; font-size: 16px; }
 .brand span { color: var(--accent); }
-.stats { display: flex; gap: 22px; margin-left: auto; flex-wrap: wrap; }
+.brand small { font-weight: 400; margin-left: 4px; }
+.stats { display: flex; gap: 24px; margin-left: auto; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; }
-.stat b { font-family: var(--mono); font-size: 16px; font-weight: 600; }
-.stat small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-nav { display: flex; gap: 4px; margin-bottom: 18px; flex-wrap: wrap; }
-nav button { white-space: nowrap; }
-nav button { background: none; border: 1px solid transparent; padding: 7px 14px; border-radius: 7px; cursor: pointer; color: var(--muted); }
-nav button.on { background: var(--panel); border-color: var(--line); color: var(--ink); font-weight: 600; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-.bar { display: flex; gap: 10px; align-items: end; padding: 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.stat b { font-family: var(--mono); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.stat small { color: var(--muted); font-size: 12px; }
+nav { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
+nav button { white-space: nowrap; background: none; border: 1px solid transparent; padding: 6px 12px; border-radius: 8px; cursor: pointer; color: var(--muted); transition: color .15s var(--ease), background-color .15s var(--ease); }
+nav button:hover { color: var(--ink); }
+nav button.on { background: var(--panel); border-color: var(--line); color: var(--ink); font-weight: 500; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.bar { display: flex; gap: 12px; align-items: end; padding: 12px 16px; min-height: 48px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .bar label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .bar h2 { margin: 0 auto 0 0; font-size: 15px; align-self: center; }
+.bar > .sub { align-self: center; }
 input[type=text], input[type=password], input[type=number] {
-  background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; min-width: 0;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; min-width: 0; height: 36px;
 }
 input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 0; border-color: var(--accent); }
-.btn { border: 1px solid var(--line); background: var(--panel); padding: 7px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 0 12px; height: 36px; border-radius: 8px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; transition: border-color .15s var(--ease), color .15s var(--ease), transform .12s var(--ease); }
 .btn:hover { border-color: var(--muted); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn:active { transform: scale(.98); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
 .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
-.btn.sm { padding: 4px 9px; font-size: 12.5px; }
+.btn.sm { padding: 0 8px; height: 28px; font-size: 13px; border-radius: 6px; }
 .btn:disabled { opacity: .5; cursor: progress; }
+.btn:focus-visible, nav button:focus-visible, .seg button:focus-visible, select:focus-visible, .menu button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px;
+}
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 8px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 tr:last-child td { border-bottom: 0; }
 td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th.num { font-family: inherit; }
 .mono { font-family: var(--mono); }
-.name { font-weight: 600; }
-.hint { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.name { font-weight: 500; white-space: nowrap; }
+.hint { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .sub { color: var(--muted); font-size: 12px; }
-.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+#keyTable .actions { flex-wrap: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill.ok { color: var(--ok); background: var(--ok-bg); }
 .pill.warn { color: var(--warn); background: var(--warn-bg); }
 .pill.bad { color: var(--bad); background: var(--bad-bg); }
 .pill.off { color: var(--off); background: var(--off-bg); }
-.empty { padding: 36px; text-align: center; color: var(--muted); }
-.grid2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
-.login { max-width: 380px; margin: 14vh auto; padding: 26px; }
-.login h1 { font-family: var(--mono); font-size: 18px; margin: 0 0 6px; }
-.login p { color: var(--muted); margin: 0 0 18px; }
-.login form { display: flex; flex-direction: column; gap: 10px; }
+.empty { padding: 40px 24px; text-align: center; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.login { max-width: 384px; margin: 14vh auto; padding: 24px; }
+.login h1 { font-family: var(--mono); font-size: 18px; margin: 0 0 8px; }
+.login p { color: var(--muted); margin: 0 0 20px; }
+.login form { display: flex; flex-direction: column; gap: 12px; }
 .err { color: var(--bad); font-size: 13px; min-height: 1.2em; }
-dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 22px; width: min(520px, calc(100vw - 32px)); }
+dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 24px; width: min(520px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / .35); }
-dialog h3 { margin: 0 0 6px; font-size: 16px; }
-dialog p { color: var(--muted); margin: 0 0 14px; }
+dialog h3 { margin: 0 0 8px; font-size: 16px; }
+dialog p { color: var(--muted); margin: 0 0 16px; }
 dialog form { display: flex; flex-direction: column; gap: 12px; }
-dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .secret { font-family: var(--mono); font-size: 13px; background: var(--bg); border: 1px dashed var(--accent); border-radius: 8px; padding: 12px; word-break: break-all; user-select: all; }
-pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0; }
-#toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
-.toast { background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 380px; box-shadow: 0 6px 24px rgb(0 0 0 / .18); font-size: 13px; }
+pre.snip { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 0; }
+#toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+.toast { background: var(--ink); color: var(--bg); padding: 8px 12px; border-radius: 8px; max-width: 384px; box-shadow: 0 8px 24px rgb(0 0 0 / .16); font-size: 13px; }
 .toast.bad { background: var(--bad); color: #fff; }
 .toast.ok { background: var(--ok); color: #fff; }
-.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 14px; }
-.mode { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; cursor: pointer; }
+.modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 16px; }
+.mode { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color .15s var(--ease); }
 .mode:hover { border-color: var(--muted); }
 .mode.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .mode input { margin-top: 3px; accent-color: var(--accent); }
-.mode b { display: block; }
-.fields { display: grid; gap: 12px; padding: 14px; }
+.mode b { display: block; font-weight: 500; }
+.fields { display: grid; gap: 12px; padding: 16px; }
 .fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .fields .row { display: flex; gap: 8px; justify-content: flex-end; }
-select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
-.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-.seg button { border: 0; background: none; padding: 6px 11px; cursor: pointer; color: var(--muted); }
+select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; height: 32px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: none; padding: 0 12px; height: 30px; cursor: pointer; color: var(--muted); transition: color .15s var(--ease); }
+.seg button:hover { color: var(--ink); }
 .seg button + button { border-left: 1px solid var(--line); }
-.seg button.on { background: var(--bg); color: var(--ink); font-weight: 600; }
-.dash { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.seg button.on { background: var(--bg); color: var(--ink); font-weight: 500; }
+/* row actions: one visible action, the rest behind "More" */
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary .chev { color: var(--muted); transition: transform .15s var(--ease); }
+.menu[open] > summary { border-color: var(--muted); }
+.menu[open] > summary .chev { transform: rotate(180deg); }
+.menu-list { position: fixed; z-index: 15; min-width: 160px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / .12); display: flex; flex-direction: column; }
+.menu-list button { all: unset; box-sizing: border-box; padding: 0 8px; height: 32px; display: flex; align-items: center; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background-color .12s var(--ease); }
+.menu-list button:hover, .menu-list button:focus-visible { background: var(--bg); }
+.menu-list button.danger { color: var(--bad); }
+.menu-list hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+/* dashboard: one wide chart, then each mid-size chart paired with something narrower */
+.dash { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .dash .wide { grid-column: 1 / -1; }
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
-.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.kpi small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.kpi b { font-family: var(--mono); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.kpi .delta { font-size: 12.5px; color: var(--muted); }
-.kpi .delta strong { color: var(--ink); font-weight: 600; }
-.kpi svg { margin-top: 8px; display: block; }
-.chart { padding: 6px 14px 12px; position: relative; }
+.dash .span2 { grid-column: span 2; }
+.dash .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.kpi { padding: 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi small { color: var(--muted); font-size: 12px; }
+.kpi b { font-family: var(--mono); font-size: 28px; line-height: 1.15; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi .delta { font-size: 13px; color: var(--muted); }
+.kpi .delta strong { color: var(--ink); font-weight: 500; }
+.chart { padding: 8px 16px 12px; position: relative; }
 .chart svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; }
-.chart text { fill: var(--muted); font: 11px var(--sans); font-variant-numeric: tabular-nums; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 14px 0; font-size: 12.5px; }
+.chart text { fill: var(--muted); font: 11px var(--mono); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 12px 16px 0; font-size: 13px; }
 .legend:empty { display: none; }
-.legend span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.note { padding: 0 14px 12px; }
-.fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.note { padding: 0 16px 12px; }
+.rank { list-style: none; margin: 0; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.rank li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; font-size: 13px; }
+.rank .lbl { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rank .lbl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .lbl i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.rank .val { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.rank .val small { color: var(--muted); font-size: 12px; margin-left: 8px; display: inline-block; min-width: 4ch; text-align: right; }
+.rank .track { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--grid); overflow: hidden; }
+.rank .track i { display: block; height: 100%; border-radius: 2px; }
+.fold { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .fold:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
-.fold .chev { color: var(--muted); transition: transform .15s; }
-.fold[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.fold .chev, .btn .chev { color: var(--muted); transition: transform .15s var(--ease); }
+.fold[aria-expanded="true"] .chev, .btn[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .panel:has(> .tablewrap[hidden]) > .bar { border-bottom: 0; }
-#tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 6px 24px rgb(0 0 0 / .14); min-width: 170px; display: none; }
-#tip .t { font-weight: 600; margin-bottom: 4px; }
+#tip { position: fixed; z-index: 20; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 13px; box-shadow: 0 8px 24px rgb(0 0 0 / .14); min-width: 172px; display: none; }
+#tip .t { font-weight: 500; margin-bottom: 4px; }
 #tip .r { display: flex; align-items: center; gap: 8px; }
-#tip .r span { flex: 1; color: var(--muted); max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#tip .r b { font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums; }
+#tip .r span { flex: 1; color: var(--muted); max-width: 232px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tip .r b { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
 #tip .r.tot { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
-#tip i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+#tip i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 #tip i.ln { height: 2px; width: 12px; border-radius: 1px; }
-@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dash { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash { grid-template-columns: minmax(0, 1fr); }
+  .dash .span2 { grid-column: auto; }
+}
 @media (max-width: 480px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) {
   .wrap { padding: 0 16px 40px; }
@@ -153,7 +193,13 @@ select { font: inherit; color: inherit; background: var(--bg); border: 1px solid
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const usd = (v, d = 4) => v == null ? "—" : "$" + Number(v).toFixed(d);
+// Money: two decimals with grouping. A nonzero sub-cent amount keeps four, so real spend never reads as $0.00.
+const usd = (v, d) => {
+  if (v == null) return "—";
+  v = Number(v);
+  if (d == null) d = v !== 0 && Math.abs(v) < 0.01 ? 4 : 2;
+  return "$" + v.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+};
 const int = (v) => v == null ? "—" : Number(v).toLocaleString();
 const ago = (ms) => {
   if (!ms) return "never";
@@ -194,7 +240,7 @@ async function api(method, path, body) {
   });
   let data = null;
   try { data = await r.json(); } catch (_) {}
-  if (r.status === 401) { logout("Session expired — enter the admin token again."); throw new Error("unauthorized"); }
+  if (r.status === 401) { logout("Session expired, enter the admin token again"); throw new Error("unauthorized"); }
   if (!r.ok) throw new Error(data?.error?.message || ("HTTP " + r.status));
   return data;
 }
@@ -209,7 +255,7 @@ function toast(msg, kind = "") {
 
 function checkToast(name, c) {
   if (!c) return;
-  toast(`${name}: ${c.message}${c.error_message ? " — " + c.error_message : ""}`, c.ok ? "ok" : "bad");
+  toast(`${name}: ${c.message.replace(/\.$/, "")}${c.error_message ? " — " + c.error_message.replace(/\.$/, "") : ""}`, c.ok ? "ok" : "bad");
 }
 
 // ------------------------------------------------------------- login
@@ -235,7 +281,7 @@ function renderLogin(err = "") {
       if (!r.ok) throw new Error();
       store("ckr_admin", token);
       start();
-    } catch (_) { renderLogin("That token was not accepted."); }
+    } catch (_) { renderLogin("That token was not accepted"); }
   };
 }
 
@@ -263,7 +309,7 @@ function start() {
   $("#tabs").onclick = (e) => { const t = e.target.dataset.t; if (t) { tab = t; store("ckr_tab", t); renderView(); refresh(); } };
   refresh();
   clearInterval(timer);
-  timer = setInterval(() => { if (!busy && !$("#dlg").open && document.visibilityState === "visible") refresh(); }, 5000);
+  timer = setInterval(() => { if (!busy && !$("#dlg").open && !document.querySelector("details.menu[open]") && document.visibilityState === "visible") refresh(); }, 5000);
 }
 
 async function refresh() {
@@ -291,10 +337,10 @@ function renderStats() {
   const remain = k.filter((x) => x.estimated_remaining_usd != null).reduce((a, x) => a + x.estimated_remaining_usd, 0);
   const hasRemain = k.some((x) => x.estimated_remaining_usd != null);
   $("#stats").innerHTML = `
-    <div class="stat"><b>${avail}/${k.length}</b><small>keys available</small></div>
-    <div class="stat"><b>${usd(spend, 2)}</b><small>tracked spend</small></div>
-    <div class="stat"><b>${hasRemain ? usd(remain, 2) : "—"}</b><small>est. credit left</small></div>
-    <div class="stat"><b>${state.clients.length}</b><small>clients</small></div>`;
+    <div class="stat"><b>${avail}/${k.length}</b><small>Keys available</small></div>
+    <div class="stat"><b>${usd(spend)}</b><small>Tracked spend</small></div>
+    <div class="stat"><b>${hasRemain ? usd(remain) : "—"}</b><small>Est. credit left</small></div>
+    <div class="stat"><b>${state.clients.length}</b><small>Clients</small></div>`;
 }
 
 // Each tab has a static skeleton (forms) built once, and a table refreshed in place,
@@ -307,7 +353,7 @@ function renderView() {
     if (tab === "dashboard") dashSkeleton(); else if (tab === "keys") keysSkeleton(); else if (tab === "clients") clientsSkeleton(); else if (tab === "headers") headersSkeleton(); else view.innerHTML = "";
   }
   if (tab === "dashboard") renderDashboard();
-  else if (tab === "keys") $("#keyTable").innerHTML = keysTable();
+  else if (tab === "keys") { if (!document.querySelector("details.menu[open]")) $("#keyTable").innerHTML = keysTable(); } // a refresh already in flight must not close an open menu
   else if (tab === "clients") $("#clientTable").innerHTML = clientsTable();
   else if (tab === "headers") renderHeaders();
   else renderActivity();
@@ -360,7 +406,7 @@ async function loadDashboard() {
 function dashSkeleton() {
   dash.hover = dash.pending = false; $("#tip").style.display = "none"; // a chart removed mid-hover never gets pointerleave
   $("#view").innerHTML = `
-    <div class="panel" style="margin-bottom:18px">
+    <div class="panel" style="margin-bottom:16px">
       <div class="bar" style="align-items:center">
         <h2>Daily usage</h2>
         <div class="seg" id="dRange">${[7, 30, 90].map((n) => `<button data-n="${n}">${n} days</button>`).join("")}</div>
@@ -370,10 +416,13 @@ function dashSkeleton() {
     <div class="kpis" id="dKpis"></div>
     <div class="dash">
       <div class="panel wide"><div class="bar"><h2>Cost per day</h2><span class="sub" id="dCostSub"></span></div><div class="legend" id="dCostLegend"></div><div class="chart" id="dCost"></div><div class="note sub" id="dUnpriced"></div></div>
-      <div class="panel"><div class="bar"><h2>Requests per day</h2></div><div class="legend" id="dReqLegend"></div><div class="chart" id="dReq"></div></div>
-      <div class="panel"><div class="bar"><h2>Tokens per day</h2></div><div class="legend" id="dTokLegend"></div><div class="chart" id="dTok"></div></div>
-      <div class="panel"><div class="bar"><h2>Cache hit rate</h2><span class="sub">cache reads ÷ all input tokens</span></div><div class="chart" id="dHit"></div></div>
-      <div class="panel"><div class="bar"><h2>Error rate</h2><span class="sub">responses with status ≥ 400</span></div><div class="chart" id="dErr"></div></div>
+      <div class="panel span2"><div class="bar"><h2>Requests per day</h2></div><div class="legend" id="dReqLegend"></div><div class="chart" id="dReq"></div></div>
+      <div class="panel"><div class="bar"><h2 id="dRankTitle">Cost by model</h2><span class="sub" id="dRankSub"></span></div><div id="dRank"></div></div>
+      <div class="panel span2"><div class="bar"><h2>Tokens per day</h2></div><div class="legend" id="dTokLegend"></div><div class="chart" id="dTok"></div></div>
+      <div class="stack">
+        <div class="panel"><div class="bar"><h2>Cache hit rate</h2><span class="sub">cache reads ÷ all input</span></div><div class="chart" id="dHit"></div></div>
+        <div class="panel"><div class="bar"><h2>Error rate</h2><span class="sub">status ≥ 400</span></div><div class="chart" id="dErr"></div></div>
+      </div>
       <div class="panel wide"><div class="bar"><h2>Day by day</h2><span class="sub">change is against the day before</span></div><div class="tablewrap" id="dTable"></div></div>
     </div>`;
   $("#dRange").onclick = (e) => {
@@ -440,7 +489,7 @@ function niceMax(v) {
 }
 
 // One chart on one y-scale: stacked bars and/or lines over the day axis, with hover.
-function drawChart(el, { days, bars = [], lines = [], fmt, axisFmt, integer = false, height = 210, max, tipRows }) {
+function drawChart(el, { days, bars = [], lines = [], fmt, axisFmt, integer = false, height = 210, max, ticks = 4, tipRows }) {
   const W = Math.max(260, el.clientWidth - 28), H = height, L = 46, R = 6, T = 8, B = 22;
   const n = days.length, band = (W - L - R) / n;
   const stackTop = days.map((_, i) => bars.reduce((a, s) => a + s.values[i], 0));
@@ -450,10 +499,10 @@ function drawChart(el, { days, bars = [], lines = [], fmt, axisFmt, integer = fa
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   const x0 = (i) => L + i * band;
   let g = "";
-  for (let k = 0; k <= 4; k++) {
-    const v = ymax * k / 4, yy = y(v);
+  for (let k = 0; k <= ticks; k++) {
+    const v = ymax * k / ticks, yy = y(v);
     g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${k ? "var(--grid)" : "var(--line)"}" stroke-width="1"/>`;
-    g += `<text x="${L - 6}" y="${yy + 3.5}" text-anchor="end">${esc(trimZeros((axisFmt || fmt)(v, ymax / 4)))}</text>`;
+    g += `<text x="${L - 6}" y="${yy + 3.5}" text-anchor="end">${esc(trimZeros((axisFmt || fmt)(v, ymax / ticks)))}</text>`;
   }
   const every = Math.ceil(n / Math.max(2, Math.floor((W - L) / 64)));
   days.forEach((d, i) => {
@@ -518,12 +567,6 @@ const tipRow = (color, label, val, line) => `<div class="r">${color ? `<i class=
 const tipTotal = (label, val) => `<div class="r tot"><i></i><span>${esc(label)}</span><b>${esc(val)}</b></div>`;
 const legend = (items) => items.map((s) => `<span title="${esc(s.label)}"><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join("");
 
-function sparkline(values, color) {
-  const W = 160, H = 28, max = Math.max(...values, 1e-9), n = values.length;
-  const pts = values.map((v, i) => `${((i / Math.max(1, n - 1)) * W).toFixed(1)},${(H - 2 - (H - 4) * (v / max)).toFixed(1)}`).join(" ");
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
-}
-
 function change(cur, prev) {
   if (!prev) return cur ? "new" : "";
   const c = (cur - prev) / prev;
@@ -540,53 +583,65 @@ function renderDashboard() {
   const allIn = (t) => t.input + t.cacheRead + t.cacheWrite;
   const totalCost = sum((t) => t.cost), totalReq = sum((t) => t.requests);
   const hit = sum((t) => t.cacheRead) / (sum(allIn) || NaN), errRate = sum((t) => t.errors) / (totalReq || NaN);
-  const kpi = (label, value, sub, spark = "") => `<div class="panel kpi"><small>${label}</small><b>${value}</b><span class="delta">${sub}</span>${spark}</div>`;
+  const kpi = (label, value, sub) => `<div class="panel kpi"><small>${label}</small><b>${value}</b><span class="delta">${sub}</span></div>`;
   const vs = `vs ${esc(dayLabel(days[P]))}`;
   $("#dKpis").innerHTML =
-    kpi("Spend yesterday", money(tot[Y].cost), `<strong>${change(tot[Y].cost, tot[P].cost) || "no change"}</strong> ${vs} · today so far ${money(tot[n - 1].cost)}`, sparkline(tot.map((t) => t.cost), "var(--s1)")) +
-    kpi("Requests yesterday", int(tot[Y].requests), `<strong>${change(tot[Y].requests, tot[P].requests) || "no change"}</strong> ${vs} · today so far ${int(tot[n - 1].requests)}`, sparkline(tot.map((t) => t.requests), "var(--s1)")) +
-    kpi(`Spend, last ${n} days`, money(totalCost), `about <strong>${money(totalCost / n)}</strong> a day · ${int(totalReq)} requests`) +
-    kpi("Cache hit rate", pct(hit), totalReq ? `<strong>${pct(errRate)}</strong> of requests failed over ${n} days` : `no requests in the last ${n} days`);
+    kpi("Spend yesterday", usd(tot[Y].cost), `<strong>${change(tot[Y].cost, tot[P].cost) || "no change"}</strong> ${vs} · today so far ${usd(tot[n - 1].cost)}`) +
+    kpi("Requests yesterday", int(tot[Y].requests), `<strong>${change(tot[Y].requests, tot[P].requests) || "no change"}</strong> ${vs} · today so far ${int(tot[n - 1].requests)}`) +
+    kpi(`Spend, last ${n} days`, usd(totalCost), `about <strong>${usd(totalCost / n)}</strong> a day · ${int(totalReq)} requests`) +
+    kpi(`Cache hit rate, last ${n} days`, pct(hit), totalReq ? `<strong>${pct(errRate)}</strong> of requests failed` : `no requests in the last ${n} days`);
 
   $("#dCostSub").textContent = `split by ${SPLITS[dash.rowsSplit].toLowerCase()} · today's bar is partial`;
   $("#dCostLegend").innerHTML = series.length > 1 ? legend(series) : "";
   drawChart($("#dCost"), {
     days, bars: series, fmt: money, axisFmt: moneyAxis, height: 240,
-    tipRows: (i) => series.filter((s) => s.values[i] > 0).map((s) => tipRow(s.color, s.label, money(s.values[i]))).join("") + tipTotal("Total", money(tot[i].cost)),
+    tipRows: (i) => series.filter((s) => s.values[i] > 0).map((s) => tipRow(s.color, s.label, usd(s.values[i]))).join("") + tipTotal("Total", usd(tot[i].cost)),
   });
   const unpriced = sum((t) => t.unpriced);
   $("#dUnpriced").textContent = unpriced ? `${int(unpriced)} successful request${unpriced > 1 ? "s" : ""} in this range had no price (model not in the price table) and count as $0 here.` : "";
   $("#dUnpriced").style.display = unpriced ? "" : "none";
 
-  const reqS = [{ label: "Succeeded", color: "var(--s1)", values: tot.map((t) => t.requests - t.errors) }, { label: "Errors (status ≥ 400)", color: "var(--s8)", values: tot.map((t) => t.errors) }];
+  // ranked cost list: the same series as the chart, so colors and totals match
+  $("#dRankTitle").textContent = "Cost by " + SPLITS[dash.rowsSplit].toLowerCase();
+  $("#dRankSub").textContent = `last ${n} days`;
+  const isOther = (s) => !s.slot;
+  const ranked = series.filter((s) => !isOther(s)).sort((a, b) => b.sum - a.sum).concat(series.filter(isOther));
+  const top = Math.max(0, ...ranked.map((s) => s.sum));
+  $("#dRank").innerHTML = ranked.length ? `<ul class="rank">${ranked.map((s) => `<li>
+      <span class="lbl" title="${esc(s.label)}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span></span>
+      <span class="val">${usd(s.sum)}<small>${pct(totalCost ? s.sum / totalCost : null)}</small></span>
+      <span class="track"><i style="width:${(100 * s.sum / top).toFixed(1)}%;background:${s.color}"></i></span></li>`).join("")}</ul>`
+    : `<div class="empty">No priced traffic in the last ${n} days</div>`;
+
+  const reqS = [{ label: "Succeeded", color: "var(--n2)", values: tot.map((t) => t.requests - t.errors) }, { label: "Errors (status ≥ 400)", color: "var(--bad)", values: tot.map((t) => t.errors) }];
   $("#dReqLegend").innerHTML = legend(reqS);
   drawChart($("#dReq"), {
     days, bars: reqS, fmt: compact, integer: true,
-    tipRows: (i) => tipRow("var(--s1)", "Succeeded", int(reqS[0].values[i])) + tipRow("var(--s8)", "Errors", int(tot[i].errors)) + tipTotal("Total", int(tot[i].requests)),
+    tipRows: (i) => tipRow(reqS[0].color, "Succeeded", int(reqS[0].values[i])) + tipRow(reqS[1].color, "Errors", int(tot[i].errors)) + tipTotal("Total", int(tot[i].requests)),
   });
 
   const tokS = [
-    { label: "Input (uncached)", color: "var(--s1)", values: tot.map((t) => t.input) },
-    { label: "Cache read", color: "var(--s3)", values: tot.map((t) => t.cacheRead) },
-    { label: "Cache write", color: "var(--s4)", values: tot.map((t) => t.cacheWrite) },
-    { label: "Output", color: "var(--s2)", values: tot.map((t) => t.output) },
+    { label: "Input (uncached)", color: "var(--n1)", values: tot.map((t) => t.input) },
+    { label: "Cache read", color: "var(--accent)", values: tot.map((t) => t.cacheRead) },
+    { label: "Cache write", color: "var(--n2)", values: tot.map((t) => t.cacheWrite) },
+    { label: "Output", color: "var(--n3)", values: tot.map((t) => t.output) },
   ];
   $("#dTokLegend").innerHTML = legend(tokS);
   drawChart($("#dTok"), {
-    days, bars: tokS, fmt: compact, integer: true,
+    days, bars: tokS, fmt: compact, integer: true, height: 236,
     tipRows: (i) => tokS.map((s) => tipRow(s.color, s.label, int(s.values[i]))).join("") + tipTotal("Total", int(allIn(tot[i]) + tot[i].output)),
   });
 
   const hitV = tot.map((t) => allIn(t) ? t.cacheRead / allIn(t) : null);
   drawChart($("#dHit"), {
-    days, lines: [{ color: "var(--s3)", values: hitV }], fmt: (v) => Math.round(v * 100) + "%", max: 1, height: 170,
-    tipRows: (i) => tipRow("var(--s3)", "Cache hit", pct(hitV[i]), true) + tipRow("", "Cache read tokens", compact(tot[i].cacheRead)),
+    days, lines: [{ color: "var(--accent)", values: hitV }], fmt: (v) => Math.round(v * 100) + "%", max: 1, height: 100, ticks: 2,
+    tipRows: (i) => tipRow("var(--accent)", "Cache hit", pct(hitV[i]), true) + tipRow("", "Cache read tokens", compact(tot[i].cacheRead)),
   });
   const errV = tot.map((t) => t.requests ? t.errors / t.requests : null);
   drawChart($("#dErr"), {
-    days, lines: [{ color: "var(--s8)", values: errV }], fmt: (v) => +(v * 100).toFixed(1) + "%", height: 170,
+    days, lines: [{ color: "var(--bad)", values: errV }], fmt: (v) => +(v * 100).toFixed(1) + "%", height: 100, ticks: 2,
     max: niceMax(Math.max(0.01, ...errV.filter((v) => v != null))),
-    tipRows: (i) => tipRow("var(--s8)", "Error rate", pct(errV[i]), true) + tipRow("", "Errors", `${int(tot[i].errors)} of ${int(tot[i].requests)}`),
+    tipRows: (i) => tipRow("var(--bad)", "Error rate", pct(errV[i]), true) + tipRow("", "Errors", `${int(tot[i].errors)} of ${int(tot[i].requests)}`),
   });
 
   // idle days are left out of the table (the charts show the gaps); change is still against the calendar day before
@@ -594,7 +649,7 @@ function renderDashboard() {
     const t = tot[i], p = tot[i - 1];
     const cng = (a, b) => i === 0 ? "" : `<div class="sub">${change(a, b)}</div>`;
     return `<tr><td>${esc(dayLabel(days[i], true))}${i === n - 1 ? ` <span class="sub">· so far</span>` : ""}</td>
-      <td class="num">${money(t.cost)}${cng(t.cost, p?.cost)}</td>
+      <td class="num">${usd(t.cost)}${cng(t.cost, p?.cost)}</td>
       <td class="num">${int(t.requests)}${cng(t.requests, p?.requests)}</td>
       <td class="num">${compact(allIn(t))} / ${compact(t.output)}</td>
       <td class="num">${pct(allIn(t) ? t.cacheRead / allIn(t) : null)}</td>
@@ -620,10 +675,10 @@ function fundedLine(k) {
 function cycleLeft(k) {
   const left = k.estimated_left_this_cycle_usd;
   if (left == null) return "";
-  const tip = `Last cycle this key used ${usd(k.last_cycle_spend_usd, 2)} through this proxy before running out. Assumes the refill was the same size and the key isn't used elsewhere.`;
+  const tip = `Last cycle this key used ${usd(k.last_cycle_spend_usd)} through this proxy before running out. Assumes the refill was the same size and the key isn't used elsewhere.`;
   return left >= 0
-    ? `<div class="sub" title="${esc(tip)}">est. ${usd(left, 2)} left</div>`
-    : `<div class="sub" title="${esc(tip)}">${usd(-left, 2)} past last cycle</div>`;
+    ? `<div class="sub" title="${esc(tip)}">est. ${usd(left)} left</div>`
+    : `<div class="sub" title="${esc(tip)}">${usd(-left)} past last cycle</div>`;
 }
 
 function statePill(k) {
@@ -634,22 +689,53 @@ function statePill(k) {
   return `<span class="pill ${bad ? "bad" : "warn"}" title="${esc(k.reason)}">${bad ? "Invalid key" : esc(k.reason || "Cooling down")} · ${dur(k.cooldown_secs)}</span>`;
 }
 
+const CHEV_DOWN = `<svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const CHEV_RIGHT = `<svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// Row menus are <details>. The list is position:fixed so the table's scroll box can't clip it,
+// so it closes on scroll, Escape and any click outside; the auto refresh waits while one is open.
+const closeMenus = (except) => { for (const m of document.querySelectorAll("details.menu[open]")) if (m !== except) m.open = false; };
+document.addEventListener("toggle", (e) => {
+  const m = e.target; if (!m.matches?.("details.menu") || !m.open) return;
+  closeMenus(m);
+  const r = m.querySelector("summary").getBoundingClientRect(), list = m.querySelector(".menu-list");
+  list.style.right = Math.max(8, innerWidth - r.right) + "px";
+  list.style.top = r.bottom + 4 + "px";
+  const h = list.offsetHeight;
+  if (r.bottom + 4 + h > innerHeight - 8) list.style.top = Math.max(8, r.top - 4 - h) + "px";
+  list.querySelector("button")?.focus();
+}, true);
+document.addEventListener("click", (e) => { if (!e.target.closest("details.menu")) closeMenus(); });
+document.addEventListener("keydown", (e) => {
+  const m = document.querySelector("details.menu[open]"); if (!m) return;
+  if (e.key === "Escape") { m.open = false; m.querySelector("summary").focus(); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const items = [...m.querySelectorAll(".menu-list button")], i = items.indexOf(document.activeElement);
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); e.preventDefault();
+  }
+});
+addEventListener("scroll", () => closeMenus(), true);
+
 function keysTable() {
   const rows = state.keys.map((k) => `
     <tr data-name="${esc(k.name)}">
       <td><div class="name">${esc(k.name)}</div><div class="hint">${esc(k.key_hint)}</div></td>
       <td>${statePill(k)}${fundedLine(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
-      <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd, 2)}
-        ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd, 2)} set ${ago(k.balance_set_ms)}</div>`}</td>
+      <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd)}
+        ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd)} set ${ago(k.balance_set_ms)}</div>`}</td>
       <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}${cycleLeft(k)}</td>
       <td class="num">${int(k.requests_since_start)}<div class="sub">${ago(k.last_used_ms)}</div></td>
       <td><div class="actions">
         <button class="btn sm" data-act="refresh" title="Clear cooldown and send a 1-token test request">Refresh</button>
-        <button class="btn sm" data-act="history">History</button>
-        <button class="btn sm" data-act="balance">Balance</button>
-        <button class="btn sm" data-act="replace">Replace</button>
-        <button class="btn sm" data-act="toggle">${k.enabled ? "Disable" : "Enable"}</button>
-        <button class="btn sm danger" data-act="remove">Remove</button>
+        <details class="menu"><summary class="btn sm" aria-label="More actions for ${esc(k.name)}">More ${CHEV_DOWN}</summary>
+          <div class="menu-list" role="menu">
+            <button type="button" role="menuitem" data-act="history">Credit history</button>
+            <button type="button" role="menuitem" data-act="balance">Set balance</button>
+            <button type="button" role="menuitem" data-act="replace">Replace key</button>
+            <button type="button" role="menuitem" data-act="toggle">${k.enabled ? "Disable" : "Enable"}</button>
+            <hr>
+            <button type="button" role="menuitem" class="danger" data-act="remove">Remove</button>
+          </div></details>
       </div></td>
     </tr>`).join("");
   return state.keys.length ? `
@@ -688,6 +774,7 @@ async function keyAction(e) {
   const btn = e.target.closest("button[data-act]"); if (!btn) return;
   const name = btn.closest("tr").dataset.name;
   const k = state.keys.find((x) => x.name === name);
+  closeMenus();
   const path = "/proxy/admin/keys/" + encodeURIComponent(name);
   busy++;
   try {
@@ -705,7 +792,7 @@ async function keyAction(e) {
         const v = await ask({ title: `Credit balance for ${name}`, text: "Enter the current balance shown in the Claude Console (e.g. after a top-up). Leave empty to stop tracking.", label: "Balance in USD", type: "number", value: k.balance_usd ?? "", allowEmpty: true });
         if (v === null) return;
         await api("PATCH", path, { balance_usd: v === "" ? null : Number(v) });
-        toast(`Balance for ${name} recorded.`, "ok");
+        toast(`Balance for ${name} recorded`, "ok");
         break;
       }
       case "replace": {
@@ -721,7 +808,7 @@ async function keyAction(e) {
       case "remove":
         if (!(await confirmBox(`Remove ${name}?`, "The key stops receiving traffic immediately. Files, batches and other resources created with it become unreachable through the proxy. Usage history is kept."))) return;
         await api("DELETE", path);
-        toast(`${name} removed.`);
+        toast(`${name} removed`);
         break;
     }
   } catch (err) { toast(err.message, "bad"); } finally { busy--; }
@@ -737,8 +824,8 @@ function clientsTable() {
       <td>${c.enabled ? `<span class="pill ok">Active</span>` : `<span class="pill off">Disabled</span>`}
         ${c.remaining_budget_usd != null && c.remaining_budget_usd <= 0 ? ` <span class="pill bad">Budget used up</span>` : ""}</td>
       <td class="num">${usd(c.spend_usd)}</td>
-      <td class="num">${c.budget_usd == null ? `<span class="sub">no limit</span>` : usd(c.budget_usd, 2)}
-        ${c.budget_usd == null ? "" : `<div class="sub">${usd(c.remaining_budget_usd, 2)} left</div>`}</td>
+      <td class="num">${c.budget_usd == null ? `<span class="sub">no limit</span>` : usd(c.budget_usd)}
+        ${c.budget_usd == null ? "" : `<div class="sub">${usd(c.remaining_budget_usd)} left</div>`}</td>
       <td class="num sub">${ago(c.created_ms)}</td>
       <td><div class="actions">
         <button class="btn sm" data-act="rotate">New token</button>
@@ -804,7 +891,7 @@ async function clientAction(e) {
       case "remove":
         if (!(await confirmBox(`Remove ${name}?`, "Its token stops working immediately. Usage history is kept."))) return;
         await api("DELETE", path);
-        toast(`${name} removed.`);
+        toast(`${name} removed`);
         break;
     }
   } catch (err) { toast(err.message, "bad"); } finally { busy--; }
@@ -825,8 +912,8 @@ export ANTHROPIC_API_KEY=${esc(tok)}</pre>
       <button class="btn primary" value="ok">Done</button>
     </div>`;
   $("#copyTok").onclick = async () => {
-    try { await navigator.clipboard.writeText(tok); toast("Copied.", "ok"); }
-    catch (_) { getSelection().selectAllChildren($("#tokVal")); toast("Press Ctrl+C to copy."); }
+    try { await navigator.clipboard.writeText(tok); toast("Copied", "ok"); }
+    catch (_) { getSelection().selectAllChildren($("#tokVal")); toast("Press Ctrl+C to copy"); }
   };
   $("#dlg").showModal();
 }
@@ -883,7 +970,7 @@ function headersSkeleton() {
   $("#hReset").onclick = async () => {
     if (!(await confirmBox("Reset header rules?", "The settings from the config file's [headers] section apply again (forward all, if it has none)."))) return;
     busy++;
-    try { state.headers = await api("DELETE", "/proxy/admin/headers"); fillRules(); renderHeaders(); toast("Header rules reset.", "ok"); }
+    try { state.headers = await api("DELETE", "/proxy/admin/headers"); fillRules(); renderHeaders(); toast("Header rules reset", "ok"); }
     catch (err) { toast(err.message, "bad"); } finally { busy--; }
   };
   $("#hRules").onsubmit = (e) => {
@@ -904,7 +991,7 @@ function fillRules() {
   rulesFilled = true;
 }
 
-async function saveHeaders(settings, msg = "Header rules saved.") {
+async function saveHeaders(settings, msg = "Header rules saved") {
   busy++;
   try { state.headers = await api("PUT", "/proxy/admin/headers", settings); fillRules(); toast(msg, "ok"); }
   catch (err) { toast(err.message, "bad"); } finally { busy--; renderHeaders(); }
@@ -934,7 +1021,7 @@ function renderHeaders() {
   $("#hBetas").innerHTML = h.betas_seen.length ? `
     <table><thead><tr><th>Beta flag</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>
     ${h.betas_seen.map((x) => `<tr><td class="mono">${esc(x.value)}</td><td class="sub">${ago(x.last_seen_ms)}</td><td>${hPill(x.status)}</td><td><div class="actions">${x.status === "always_removed" ? `<span class="sub">OAuth flags only work with a login token; upstream gets an API key.</span>` : action("beta", x.value, x.status)}</div></td></tr>`).join("")}
-    </tbody></table>` : `<div class="empty">No beta flags seen yet.</div>`;
+    </tbody></table>` : `<div class="empty">No beta flags seen yet</div>`;
 }
 
 function headerAction(e) {
@@ -946,14 +1033,14 @@ function headerAction(e) {
   if (status === "forwarded") {
     if (kind === "header" && next.mode === "minimal" && next.keep.some((p) => matches(p, name))) next.keep = next.keep.filter((p) => !matches(p, name));
     else list.push(name);
-    saveHeaders(next, `${name} will be dropped.`);
+    saveHeaders(next, `${name} will be dropped`);
   } else if (status === "dropped_by_rule") {
     const kept = list.filter((p) => !matches(p, name));
     if (kind === "beta") next.drop_betas = kept; else next.drop = kept;
-    saveHeaders(next, `${name} will be forwarded.`);
+    saveHeaders(next, `${name} will be forwarded`);
   } else if (status === "dropped_by_mode") {
     next.keep.push(name);
-    saveHeaders(next, `${name} will be forwarded.`);
+    saveHeaders(next, `${name} will be forwarded`);
   }
 }
 
@@ -967,7 +1054,7 @@ function renderActivity() {
       <td class="sub" title="${esc(new Date(r.ts_ms).toLocaleString())}">${ago(r.ts_ms)}</td>
       <td>${esc(r.client)}</td>
       <td>${esc(r.key ?? "—")}</td>
-      <td><span class="mono" style="font-size:12.5px">${esc(r.method)} ${esc(r.path)}</span><div class="sub">${esc(r.model ?? "")}${r.streamed ? " · stream" : ""}</div></td>
+      <td><span class="mono" style="font-size:13px">${esc(r.method)} ${esc(r.path)}</span><div class="sub">${esc(r.model ?? "")}${r.streamed ? " · stream" : ""}</div></td>
       <td><span class="pill ${okStatus ? "ok" : r.status === 429 ? "warn" : "bad"}" title="${esc(r.error ?? "")}">${r.status}</span>${r.attempts > 1 ? `<div class="sub">${r.attempts} attempts</div>` : ""}</td>
       <td class="num">${int(u.input_tokens)} / ${int(u.output_tokens)}<div class="sub">cache ${int(u.cache_read_input_tokens)} read · ${int(u.cache_write_5m_input_tokens + u.cache_write_1h_input_tokens)} write</div></td>
       <td class="num">${r.cost_usd == null ? (r.model && okStatus ? `<span class="sub" title="model not in price table">unpriced</span>` : "—") : usd(r.cost_usd, 5)}</td>
@@ -977,13 +1064,13 @@ function renderActivity() {
     const inTot = u.input_tokens + u.cache_read_input_tokens + u.cache_write_5m_input_tokens + u.cache_write_1h_input_tokens;
     const hit = inTot ? Math.round(100 * u.cache_read_input_tokens / inTot) : 0;
     return `<tr><td class="mono">${esc(u.model || "(no model)")}</td><td class="num">${int(u.requests)}</td>
-      <td class="num">${int(inTot)}</td><td class="num">${int(u.output_tokens)}</td><td class="num">${hit}%</td><td class="num">${usd(u.cost_usd, u.cost_usd < 1 ? 4 : 2)}</td></tr>`;
+      <td class="num">${int(inTot)}</td><td class="num">${int(u.output_tokens)}</td><td class="num">${hit}%</td><td class="num">${usd(u.cost_usd)}</td></tr>`;
   }).join("");
   $("#view").innerHTML = `
     <div class="grid2">
       <div class="panel">
         <div class="bar"><h2>Last 30 days by model</h2></div>
-        <div class="tablewrap">${state.usage.length ? `<table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Input tokens</th><th class="num">Output tokens</th><th class="num">Cache hit</th><th class="num">Cost</th></tr></thead><tbody>${useRows}</tbody></table>` : `<div class="empty">No traffic yet.</div>`}</div>
+        <div class="tablewrap">${state.usage.length ? `<table><thead><tr><th>Model</th><th class="num">Requests</th><th class="num">Input tokens</th><th class="num">Output tokens</th><th class="num">Cache hit</th><th class="num">Cost</th></tr></thead><tbody>${useRows}</tbody></table>` : `<div class="empty">No traffic yet</div>`}</div>
       </div>
       <div class="panel" id="creditHist">
         <div class="bar"><h2><button class="fold" data-act="fold" aria-expanded="false"><svg class="chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Credit history</button></h2><span class="sub" id="chSummary"></span><button class="btn sm" data-act="all" hidden></button></div>
@@ -991,7 +1078,7 @@ function renderActivity() {
       </div>
       <div class="panel">
         <div class="bar"><h2>Recent requests</h2></div>
-        <div class="tablewrap">${state.requests.length ? `<table><thead><tr><th>When</th><th>Client</th><th>Key</th><th>Request</th><th>Status</th><th class="num">Tokens in / out</th><th class="num">Cost</th></tr></thead><tbody>${reqRows}</tbody></table>` : `<div class="empty">No requests yet.</div>`}</div>
+        <div class="tablewrap">${state.requests.length ? `<table><thead><tr><th>When</th><th>Client</th><th>Key</th><th>Request</th><th>Status</th><th class="num">Tokens in / out</th><th class="num">Cost</th></tr></thead><tbody>${reqRows}</tbody></table>` : `<div class="empty">No requests yet</div>`}</div>
       </div>
     </div>`;
   renderCreditHistory();
@@ -1032,14 +1119,14 @@ function renderCreditHistory() {
   const all = box.querySelector("button[data-act=all]");
   all.hidden = !creditOpen || !multi.length;
   all.textContent = multi.some((g) => !expandedKeys.has(g.key)) ? "Expand all" : "Collapse all";
-  if (!groups.length) { box.querySelector(".tablewrap").innerHTML = `<div class="empty">No credit history yet.</div>`; return; }
+  if (!groups.length) { box.querySelector(".tablewrap").innerHTML = `<div class="empty">No credit history yet</div>`; return; }
   const body = groups.map(({ key, rows }) => {
     const open = expandedKeys.has(key), earlier = rows.length - 1;
     const done = rows.filter((p) => p.ended_ms && p.end_reason === "out of credits");
     const avg = done.length ? done.reduce((a, p) => a + p.spend_usd, 0) / done.length : null;
     const keyCell = `<td><div class="name">${esc(key)}</div>
-      <div class="sub">${rows.length} period${rows.length > 1 ? "s" : ""}${avg != null ? ` · avg ${usd(avg, 2)} per refill` : ""}</div>
-      ${earlier ? `<button class="btn sm" data-key="${esc(key)}" data-act="toggle" aria-expanded="${open}" style="margin-top:4px">${open ? "▾ Hide earlier" : `▸ ${earlier} earlier`}</button>` : ""}</td>`;
+      <div class="sub">${rows.length} period${rows.length > 1 ? "s" : ""}${avg != null ? ` · avg ${usd(avg)} per refill` : ""}</div>
+      ${earlier ? `<button class="btn sm" data-key="${esc(key)}" data-act="toggle" aria-expanded="${open}" style="margin-top:4px">${CHEV_RIGHT}${open ? "Hide earlier" : `${earlier} earlier`}</button>` : ""}</td>`;
     return periodRow(rows[0], keyCell) + (open ? rows.slice(1).map((p) => periodRow(p, `<td></td>`, true)).join("") : "");
   }).join("");
   box.querySelector(".tablewrap").innerHTML = `<table><thead><tr><th>Key</th><th>Funded from</th><th>Until</th><th class="num">Lasted</th><th class="num">Used</th><th class="num">Requests</th></tr></thead><tbody>${body}</tbody></table>`;
@@ -1057,7 +1144,7 @@ function periodRow(p, firstCell, nested) {
 }
 
 function periodsTable(rows, withKey) {
-  if (!rows.length) return `<div class="empty">No credit history yet.</div>`;
+  if (!rows.length) return `<div class="empty">No credit history yet</div>`;
   const body = rows.map((p) => periodRow(p, withKey ? `<td class="name">${esc(p.key)}</td>` : "")).join("");
   return `<table><thead><tr>${withKey ? "<th>Key</th>" : ""}<th>Funded from</th><th>Until</th><th class="num">Lasted</th><th class="num">Used</th><th class="num">Requests</th></tr></thead><tbody>${body}</tbody></table>`;
 }
@@ -1070,7 +1157,7 @@ async function showHistory(name) {
   f.innerHTML = `
     <h3>Credit history · ${esc(name)}</h3>
     <p>Each row is one funded period: from when the key was added or a refill was detected, until it ran out of credits.
-      “Used” is what this proxy spent on the key in that period${avg != null ? ` — on average ${usd(avg, 2)} per refill over ${done.length} completed period${done.length > 1 ? "s" : ""}` : ""}.</p>
+      “Used” is what this proxy spent on the key in that period${avg != null ? ` — on average ${usd(avg)} per refill over ${done.length} completed period${done.length > 1 ? "s" : ""}` : ""}.</p>
     <div class="tablewrap" style="max-height:55vh;overflow:auto">${periodsTable(rows, false)}</div>
     <div class="row"><button class="btn primary" value="ok">Close</button></div>`;
   $("#dlg").style.width = "min(760px, calc(100vw - 32px))";

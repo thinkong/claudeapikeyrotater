@@ -105,18 +105,18 @@ Things to know:
 
 | Tab | What you can do |
 |---|---|
-| **Dashboard** | Daily charts over the last 7, 30 or 90 days, in your local time: cost per day split by model, upstream key or client; requests and errors; tokens (input, cache read, cache write, output); cache-hit and error rates. Tiles compare yesterday with the day before, and a day-by-day table shows each day's change. Today's bar is partial. |
+| **Dashboard** | Daily charts over the last 7, 30 or 90 days, in your local time: cost per day split by model, upstream key or client, with a ranked list of the same split; requests and errors; tokens (input, cache read, cache write, output); cache-hit and error rates. Tiles compare yesterday with the day before, and a day-by-day table shows each day's change. Today's bar is partial. |
 | **Upstream keys** | Add a key (checked immediately). See each key's state: available, cooling down (rate limit), out of credits (with time until retry), invalid, or disabled. See estimated credit left, spend and last use. |
 | **Client keys** | Create a key (shown once, only its hash is stored). See spend vs. budget. |
 | **Headers** | Choose **Forward all** or **Minimal** header forwarding. See every header name and beta flag clients have sent since the proxy started, what happens to each, and drop or forward it with one click. Changes apply to the next request. |
 | **Activity** | Last 30 days by model, including cache-hit rate and cost. Credit history across all keys, folded to a one-line summary until you open it; inside, the latest period per key with earlier ones a click away. Recent requests with key, status, tokens and cost. |
 
-Row buttons on **Upstream keys**:
+Row actions on **Upstream keys**: **Refresh** sits on the row, the rest are under **More**.
 
 - **Refresh** clears the key's cooldown and sends a 1-output-token request on `check_model` (default Claude Haiku 5.5, a tiny fraction of a cent). The proxy already runs this check in the background for out-of-credit keys; Refresh just runs it now. This is the only reliable way to tell whether a key still has credit: a model listing succeeds even with an empty balance. The result appears as a notification and updates the key's state.
-- **History** lists the key's credit periods: when it was funded or a refill was detected, when it ran out, how long it lasted, and how much was used.
-- **Balance** records a known balance, for example after a top-up. On an out-of-credits key, a positive balance also triggers a credit check right away. The key comes back as soon as that check passes.
-- **Replace** swaps in a new secret under the same name. History is kept, and the new secret is checked right away.
+- **Credit history** lists the key's credit periods: when it was funded or a refill was detected, when it ran out, how long it lasted, and how much was used.
+- **Set balance** records a known balance, for example after a top-up. On an out-of-credits key, a positive balance also triggers a credit check right away. The key comes back as soon as that check passes.
+- **Replace key** swaps in a new secret under the same name. History is kept, and the new secret is checked right away.
 - **Disable**, **Remove**.
 
 Row buttons on **Client keys**: **New token** (rotate; the old token stops working immediately), **Budget**, **Disable**, **Remove**.
@@ -221,11 +221,11 @@ The proxy keeps a history of **credit periods** for each key. A period starts wh
 - **When it ran out**, and how long the period lasted.
 - **How much the proxy used** during it, with the number of requests. Background credit checks are counted in the spend but not in the request count.
 
-If a key's balance was close to zero each time it was refilled, the amount used in a period is roughly how much was added. The **History** dialog shows the average per completed period.
+If a key's balance was close to zero each time it was refilled, the amount used in a period is roughly how much was added. The **Credit history** dialog shows the average per completed period.
 
 Once a key has gone through a full cycle (a detected refill, real traffic, then out of credits), the key table shows an estimate under the spend: **"$X this cycle · est. $Y left"**, where Y is last cycle's spend minus this cycle's. If this cycle has already gone past it, it says **"$Z past last cycle"** instead. The estimate assumes refills are the same size and that the key isn't used outside the proxy. It skips cycles that can't tell you the refill size: a key's first period (it held whatever was left when it was added or when tracking started), and cycles where only the credit check got through. Replacing a key's secret clears it. The API returns it as `last_cycle_spend_usd` and `estimated_left_this_cycle_usd` on each key.
 
-The UI shows this per key (**History**) and across all keys (**Activity**), and the API serves it at `GET /proxy/admin/credit-periods`. Tracking started with v0.1.3. Keys that were funded before upgrading start their first period at the upgrade.
+The UI shows this per key (**More → Credit history**) and across all keys (**Activity**), and the API serves it at `GET /proxy/admin/credit-periods`. Tracking started with v0.1.3. Keys that were funded before upgrading start their first period at the upgrade.
 
 ### Remaining credits
 
