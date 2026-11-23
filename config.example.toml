@@ -38,6 +38,7 @@ max_buffer_bytes = 67108864    # larger bodies stream through without failover
 connect_timeout_secs = 10
 read_timeout_secs = 900        # max silence between bytes; no total timeout (long streams are fine)
 pin_retention_days = 90
+prefer_soonest_reset = true    # use the key whose monthly budget resets soonest first (see README)
 
 # Request headers. Credentials (x-api-key, authorization, proxy-authorization), hop-by-hop
 # headers, accept-encoding, x-proxy-* and oauth-* betas are always removed.

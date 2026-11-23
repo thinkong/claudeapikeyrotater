@@ -137,6 +137,7 @@ Routing is sticky because of two constraints:
 So the proxy:
 
 - **Pins resources.** When a `POST` creates something with an `id`, or a Messages response returns a `container.id`, the id is pinned to that key. Any later request with that id in its path or JSON body goes to the same key. If that key has since been removed, the request gets a clear 404.
+- **Uses the key whose monthly budget resets soonest first** (`routing.prefer_soonest_reset`, on by default). Credit left on a key when its budget resets is lost, so the key with the fewest days left gets the traffic until it runs out or is benched, then the next one. Keys with no reset assumed or set yet come after all the others. See [Monthly budgets](#monthly-budgets). With every key at the same place in line (or the option off), the next rule decides.
 - **Hashes everything else onto available keys** with rendezvous hashing, set by `routing.affinity`:
   - `conversation` (default): model + tools + system + first message. Each conversation stays on one key, and different conversations spread across the pool.
   - `prefix`: model + tools + system.
@@ -226,6 +227,27 @@ If a key's balance was close to zero each time it was refilled, the amount used 
 Once a key has gone through a full cycle (a detected refill, real traffic, then out of credits), the key table shows an estimate under the spend: **"$X this cycle · est. $Y left"**, where Y is last cycle's spend minus this cycle's. If this cycle has already gone past it, it says **"$Z past last cycle"** instead. The estimate assumes refills are the same size and that the key isn't used outside the proxy. It skips cycles that can't tell you the refill size: a key's first period (it held whatever was left when it was added or when tracking started), and cycles where only the credit check got through. Replacing a key's secret clears it. The API returns it as `last_cycle_spend_usd` and `estimated_left_this_cycle_usd` on each key.
 
 The UI shows this per key (**More → Credit history**) and across all keys (**Activity**), and the API serves it at `GET /proxy/admin/credit-periods`. Tracking started with v0.1.3. Keys that were funded before upgrading start their first period at the upgrade.
+
+### Monthly budgets
+
+Keys with a monthly budget that resets on its own day are handled automatically. Anthropic reports neither the reset day nor the budget, so the proxy **assumes** both from what it sees, and you can change either assumption.
+
+- **Reset day (assumed).** When an out-of-credits key works again, its budget was reset somewhere in the refill window (see above). The proxy assumes a monthly reset at that moment: the same day of the month and time of day (UTC) every month, moved to the last day in shorter months. With the default hourly checks the assumption is good to within half an hour. Each new refill moves it to its own window. Earlier refills (up to three) on about the same day of the month (within two days) confirm it, and one with a narrower window that falls inside the latest window narrows it. A refill on a different day starts over. A "refill" that only the credit check saw, and real traffic then failed, is ignored.
+- **Budget (assumed).** What the key spent through the proxy from a refill until it ran out: the same "last cycle" used above. If a later cycle spent more, that's the new assumption.
+- **A month without running out.** If a key gets through a whole month (from one reset to the next) without running out, it hadn't reached its limit. Its budget is then **at least** what it spent that month, and the UI shows **"≥ $X left · hasn't hit its limit"**. Without any other information, that lower bound is all the proxy assumes. It allows a day's grace after the reset, in case the assumed reset time is a little early.
+- **Credit left** = budget − spend since the last reset, or $0 for a key that is out of credits.
+- **At each reset**, spend since the reset starts again from zero, and an out-of-credits key is checked right away instead of at its next scheduled check.
+
+**Changing the assumptions.** Under **More → Set reset & budget**, enter a reset (any past or upcoming one; it repeats monthly on that day and time) and/or the monthly budget. A set value replaces the assumption, and the table marks it **set** rather than **assumed**. Leave a field empty to go back to the assumption. Over the API: `PATCH /proxy/admin/keys/{name}` with `{"reset_at_ms": <unix ms> | null, "monthly_budget_usd": <number> | null}`.
+
+A key with no reset assumed or set (it hasn't run out and come back yet) shows **not known yet** and goes to the back of the line. The key table's **Budget resets** column shows when each key resets, whether that's assumed or set, the uncertainty of an assumption, and its place in line. **Est. credit left** shows the budget left when no balance is entered. The API returns this on each key:
+
+- `reset`: the reset in use (`source`: `"set"` or `"assumed"`, `next_reset_ms`, `last_reset_ms`), with `reset_set_ms`.
+- `reset_guess`: the assumption alone (`next_reset_ms`, `uncertainty_hours`, `refills_seen`), even while a set reset overrides it.
+- `monthly_budget_usd` with `monthly_budget_source` (`"set"`, `"learned"` or `"at_least"`), and `monthly_budget_set_usd`.
+- `limit_not_reached_last_cycle`, `spend_this_budget_cycle_usd`, `estimated_credit_left_usd` and `reset_order`.
+
+Replacing a key's secret forgets what was learned from refills; set values stay.
 
 ### Remaining credits
 

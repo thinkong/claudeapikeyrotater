@@ -1,4 +1,5 @@
 mod admin;
+mod budget;
 mod config;
 mod headers;
 mod pool;

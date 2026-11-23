@@ -76,6 +76,7 @@ th.num { font-family: inherit; }
 .sub { color: var(--muted); font-size: 12px; }
 .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 #keyTable .actions { flex-wrap: nowrap; }
+.nowrap { white-space: nowrap; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill.ok { color: var(--ok); background: var(--ok-bg); }
@@ -672,13 +673,65 @@ function fundedLine(k) {
   return `<div class="sub">back since ${when(k.funded_since_ms)}${window}${trial}</div>`;
 }
 
-function cycleLeft(k) {
-  const left = k.estimated_left_this_cycle_usd;
-  if (left == null) return "";
-  const tip = `Last cycle this key used ${usd(k.last_cycle_spend_usd)} through this proxy before running out. Assumes the refill was the same size and the key isn't used elsewhere.`;
-  return left >= 0
-    ? `<div class="sub" title="${esc(tip)}">est. ${usd(left)} left</div>`
-    : `<div class="sub" title="${esc(tip)}">${usd(-left)} past last cycle</div>`;
+// When the monthly budget resets: set by hand, or assumed from observed refills. Plus the key's place in line.
+function resetCell(k) {
+  const r = k.reset, g = k.reset_guess;
+  if (!r) return `<span class="sub" title="Assumed once the key runs out of credits and later works again. You can also set it under More.">not known yet</span>`;
+  const day = new Date(r.next_reset_ms).toLocaleDateString([], { month: "short", day: "numeric" });
+  const set = r.source === "set";
+  const h = g?.uncertainty_hours;
+  const pm = set || h == null ? "" : h < 1 ? ` ± ${Math.max(1, Math.round(h * 60))}m` : ` ± ${Math.round(h)}h`;
+  const tip = set
+    ? `Set by you: every month on this day and time. Last reset ${when(r.last_reset_ms)}.${g ? ` The proxy would assume ${when(g.next_reset_ms)}.` : ""}`
+    : `An assumption: a monthly reset on the day a refill was seen (${g.refills_seen === 1 ? "seen once so far" : `seen ${g.refills_seen} times`}). Last reset ${when(r.last_reset_ms)}. Change it under More → Set reset & budget.`;
+  const order = k.reset_order === 1 ? " · used first" : k.reset_order ? ` · #${k.reset_order} in line` : "";
+  return `<div title="${esc(tip)}">in ${span(Date.now(), r.next_reset_ms)}<span class="sub">${order}</span></div><div class="sub nowrap" title="${esc(tip)}">${esc(day)}${pm} · ${set ? "set" : "assumed"}</div>`;
+}
+
+// Credit left: from a balance you entered, else from the monthly budget (set, learned, or a lower bound).
+function creditCell(k) {
+  if (k.estimated_remaining_usd != null)
+    return `${usd(k.estimated_remaining_usd)}${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd)} set ${ago(k.balance_set_ms)}</div>`}`;
+  const b = k.monthly_budget_usd, src = k.monthly_budget_source;
+  if (b == null) return `<span class="sub" title="Set a balance or a monthly budget, or the proxy learns the budget once the key runs out after a refill">not known yet</span>`;
+  const since = k.reset ? "the last reset" : "the last refill";
+  const tip = src === "set" ? `Monthly budget set by you, minus the spend since ${since}.`
+    : src === "at_least" ? `The key got through its last month without running out, so it hadn't reached its limit: its budget is at least what it spent then (${usd(b)}). Left: at least that minus the spend since ${since}.`
+    : `Learned budget: what the key spent through this proxy from its last refill until it ran out. Left: that minus the spend since ${since}. Assumes the key isn't used elsewhere.`;
+  const left = src === "at_least" ? `≥ ${usd(k.estimated_credit_left_usd)}` : src === "set" ? usd(k.estimated_credit_left_usd) : `~${usd(k.estimated_credit_left_usd)}`;
+  const of = src === "at_least" ? "hasn't hit its limit" : src === "set" ? `of ${usd(b)}/mo · set` : `of ~${usd(b)}/mo`;
+  return `<span title="${esc(tip)}">${left}</span><div class="sub" title="${esc(tip)}">${of}</div>`;
+}
+
+// Set or clear the reset moment and monthly budget. Empty fields go back to the assumptions.
+function budgetDialog(k) {
+  return new Promise((resolve) => {
+    const d = $("#dlg"), f = $("#dlgForm");
+    const local = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const g = k.reset_guess;
+    const learned = k.monthly_budget_source && k.monthly_budget_source !== "set"
+      ? (k.monthly_budget_source === "at_least" ? `at least ${usd(k.monthly_budget_usd)}` : `about ${usd(k.monthly_budget_usd)}`) : null;
+    const lab = `class="sub" style="display:flex;flex-direction:column;gap:4px;margin-top:10px"`;
+    f.innerHTML = `
+      <h3>Budget reset for ${esc(k.name)}</h3>
+      <p>The proxy assumes when this key's monthly budget resets and how big it is from what it sees. If you know better, set them here. Leave a field empty to go back to the assumption.</p>
+      <label ${lab}>A reset (repeats every month on this day and time)
+        <input id="bReset" type="datetime-local" value="${k.reset_set_ms && k.reset ? local(k.reset.next_reset_ms) : ""}"></label>
+      <div class="sub">${g ? `Assumed next reset: ${esc(when(g.next_reset_ms))}` : "Nothing assumed yet: the key hasn't run out and come back."}</div>
+      <label ${lab}>Monthly budget in USD
+        <input id="bBudget" type="number" min="0" step="0.01" autocomplete="off" value="${k.monthly_budget_set_usd ?? ""}"></label>
+      <div class="sub">${learned ? `Assumed: ${esc(learned)}` : "Nothing assumed yet."}</div>
+      <div class="row"><button type="button" class="btn" id="bCancel">Cancel</button><button class="btn primary" value="ok">Save</button></div>`;
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    $("#bCancel").onclick = () => { finish(null); d.close(); };
+    f.onsubmit = () => {
+      const r = $("#bReset").value, b = $("#bBudget").value;
+      finish({ reset_at_ms: r ? new Date(r).getTime() : null, monthly_budget_usd: b === "" ? null : Number(b) });
+    };
+    d.onclose = () => finish(null);
+    d.showModal(); $("#bReset").focus();
+  });
 }
 
 function statePill(k) {
@@ -721,15 +774,16 @@ function keysTable() {
     <tr data-name="${esc(k.name)}">
       <td><div class="name">${esc(k.name)}</div><div class="hint">${esc(k.key_hint)}</div></td>
       <td>${statePill(k)}${fundedLine(k)}${k.last_error && k.state === "available" ? `<div class="sub" title="${esc(k.last_error)}">last error: ${esc(k.last_error.slice(0, 40))}</div>` : ""}</td>
-      <td class="num">${k.estimated_remaining_usd == null ? `<span class="sub">not set</span>` : usd(k.estimated_remaining_usd)}
-        ${k.balance_usd == null ? "" : `<div class="sub">of ${usd(k.balance_usd)} set ${ago(k.balance_set_ms)}</div>`}</td>
-      <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}${cycleLeft(k)}</td>
+      <td class="num">${creditCell(k)}</td>
+      <td class="num">${usd(k.spend_usd)}${k.spend_this_period_usd == null ? "" : `<div class="sub" title="since ${esc(k.funded_reason)} at ${when(k.funded_since_ms)}">${usd(k.spend_this_period_usd)} this cycle</div>`}</td>
+      <td>${resetCell(k)}</td>
       <td class="num">${int(k.requests_since_start)}<div class="sub">${ago(k.last_used_ms)}</div></td>
       <td><div class="actions">
         <button class="btn sm" data-act="refresh" title="Clear cooldown and send a 1-token test request">Refresh</button>
         <details class="menu"><summary class="btn sm" aria-label="More actions for ${esc(k.name)}">More ${CHEV_DOWN}</summary>
           <div class="menu-list" role="menu">
             <button type="button" role="menuitem" data-act="history">Credit history</button>
+            <button type="button" role="menuitem" data-act="budget">Set reset &amp; budget</button>
             <button type="button" role="menuitem" data-act="balance">Set balance</button>
             <button type="button" role="menuitem" data-act="replace">Replace key</button>
             <button type="button" role="menuitem" data-act="toggle">${k.enabled ? "Disable" : "Enable"}</button>
@@ -739,7 +793,7 @@ function keysTable() {
       </div></td>
     </tr>`).join("");
   return state.keys.length ? `
-        <table><thead><tr><th>Key</th><th>Status</th><th class="num">Est. credit left</th><th class="num">Spend</th><th class="num">Requests</th><th></th></tr></thead>
+        <table><thead><tr><th>Key</th><th>Status</th><th class="num">Est. credit left</th><th class="num">Spend</th><th>Budget resets</th><th class="num">Requests</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table>` : `<div class="empty">No upstream keys yet. Add a Claude API key above.</div>`;
 }
 
@@ -755,7 +809,7 @@ function keysSkeleton() {
       </form>
       <div class="tablewrap" id="keyTable"></div>
     </div>
-    <p class="sub" style="margin-top:12px">Keys that run out of credits get no traffic; the proxy re-checks them in the background and brings them back once a check passes. “Refresh” checks a key right now with a 1-token request on ${esc(state.status?.check_model || "a cheap model")} — the only reliable way to tell whether the key still has credit. Credit left is an estimate: the balance you enter minus the spend this proxy has seen since.</p>`;
+    <p class="sub" style="margin-top:12px">Keys that run out of credits get no traffic; the proxy re-checks them in the background and brings them back once a check passes. “Refresh” checks a key right now with a 1-token request on ${esc(state.status?.check_model || "a cheap model")} — the only reliable way to tell whether the key still has credit. Credit left is an estimate: the balance you enter minus the spend this proxy has seen since, or, without a balance, the learned monthly budget minus this cycle's spend. Monthly budgets are assumptions: when a key runs out and later works again, that day of the month is assumed to be its reset day and the spend until it ran out its budget. A key that gets through a whole month without running out hadn't reached its limit. Change either under More → Set reset &amp; budget. Traffic goes to the key that resets soonest first, so credit that would be lost at a reset gets used.</p>`;
   $("#addKey").onsubmit = async (e) => {
     e.preventDefault();
     const btn = $("#kAdd"); btn.disabled = true;
@@ -793,6 +847,13 @@ async function keyAction(e) {
         if (v === null) return;
         await api("PATCH", path, { balance_usd: v === "" ? null : Number(v) });
         toast(`Balance for ${name} recorded`, "ok");
+        break;
+      }
+      case "budget": {
+        const v = await budgetDialog(k);
+        if (v === null) return;
+        await api("PATCH", path, v);
+        toast(`Saved for ${name}${v.reset_at_ms == null && v.monthly_budget_usd == null ? " (back to assumptions)" : ""}`, "ok");
         break;
       }
       case "replace": {

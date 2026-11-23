@@ -229,10 +229,27 @@ async fn edit_key(State(st): State<Arc<AppState>>, h: HeaderMap, Path(name): Pat
         Ok(v) => v,
         Err(r) => return r,
     };
+    let budget = match tri_f64(&b, "monthly_budget_usd") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let reset_at = match b.get("reset_at_ms") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(x) => match x.as_i64() {
+            Some(ms) if ms > 0 => Some(Some(ms)),
+            _ => return bad_request("reset_at_ms must be a unix time in milliseconds or null"),
+        },
+    };
     let secret = b.get("key").and_then(Value::as_str);
     let enabled = b.get("enabled").and_then(Value::as_bool);
     if let Err(e) = st.pool.edit_key(&name, secret, enabled, balance) {
         return bad_request(e);
+    }
+    if reset_at.is_some() || budget.is_some() {
+        if let Err(e) = st.pool.set_budget(&name, reset_at, budget) {
+            return bad_request(e);
+        }
     }
     // A replaced secret gets checked straight away.
     let check = if secret.is_some() { check_key(&st, &name).await } else { Value::Null };

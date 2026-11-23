@@ -1,6 +1,7 @@
 //! Upstream key pool and client registry. Both live in memory (authoritative) and are
 //! persisted through the store, so the admin UI can change them while the proxy runs.
 
+use crate::budget::{self, Refill, ResetGuess};
 use crate::config::{Config, Cooldowns, SeedClient, SeedKey};
 use crate::now_ms;
 use crate::store::{ClientRow, KeyRow, OpenPeriod, RequestRow, Store};
@@ -30,6 +31,19 @@ struct KeyInfo {
     /// Multiplier on the credit re-check interval; doubles when a key that passed a check
     /// immediately fails real traffic again, resets once real traffic succeeds.
     check_backoff: u32,
+    /// Refills seen since the current secret (oldest first), and the monthly reset guessed from them.
+    refills: Vec<Refill>,
+    reset: Option<ResetGuess>,
+    /// The reset in use: set by hand (`row.reset_at_ms`), else the guess. Every month on its
+    /// day of the month and time of day.
+    anchor: Option<i64>,
+    /// The current budget cycle: from the last reset until `next_reset_ms`.
+    cycle_start_ms: i64,
+    next_reset_ms: Option<i64>,
+    cycle_spend: f64,
+    /// Spend in the previous cycle, if the key got through all of it without running out:
+    /// it hadn't reached its limit, so the budget is at least this.
+    quiet_cycle_spend: Option<f64>,
 }
 
 impl KeyInfo {
@@ -47,7 +61,80 @@ impl KeyInfo {
             probation: false,
             check_backoff: 1,
             last_cycle_spend: None,
+            refills: Vec::new(),
+            reset: None,
+            anchor: None,
+            cycle_start_ms: 0,
+            next_reset_ms: None,
+            cycle_spend: 0.0,
+            quiet_cycle_spend: None,
         }
+    }
+
+    /// Re-guess the reset from the refills, pick the reset in use, and load the current and
+    /// previous cycle from the store.
+    fn sync_cycle(&mut self, store: &Store, now: i64) {
+        self.reset = budget::guess(&self.refills);
+        self.anchor = self.row.reset_at_ms.or(self.reset.map(|g| g.anchor_ms));
+        self.cycle_spend = 0.0;
+        self.quiet_cycle_spend = None;
+        let Some(anchor) = self.anchor else {
+            self.cycle_start_ms = 0;
+            self.next_reset_ms = None;
+            return;
+        };
+        let (prev, next) = budget::cycle(anchor, now);
+        self.cycle_start_ms = prev;
+        self.next_reset_ms = Some(next);
+        self.cycle_spend = store.key_spend_since(&self.row.name, prev).unwrap_or(0.0);
+        let (before, _) = budget::cycle(anchor, prev - 1);
+        if let Ok((spend, true)) = store.quiet_cycle(&self.row.name, before, prev) {
+            self.quiet_cycle_spend = Some(spend);
+        }
+    }
+
+    /// Past the reset, a new cycle starts; an out-of-credits key is due for a credit check
+    /// right away instead of at its next scheduled one.
+    fn roll(&mut self, store: &Store, now: i64) {
+        if self.next_reset_ms.map_or(true, |next| now < next) {
+            return;
+        }
+        self.sync_cycle(store, now);
+        if self.row.exhausted_ms.is_some() {
+            self.row.cooldown_until_ms = self.row.cooldown_until_ms.min(now);
+        }
+    }
+
+    /// Spend that counts against the budget now: since the last reset if there is one,
+    /// else since the key was last funded.
+    fn spend_now(&self) -> f64 {
+        if self.anchor.is_some() {
+            self.cycle_spend
+        } else {
+            self.period_spend
+        }
+    }
+
+    /// The monthly budget and where it comes from: set by hand; learned from the last full
+    /// cycle (refill until out of credits), or more if a later cycle spent more; or only a
+    /// lower bound, from a cycle the key got through without reaching its limit.
+    fn budget(&self) -> Option<(f64, &'static str)> {
+        if let Some(b) = self.row.monthly_budget_usd {
+            return Some((b, "set"));
+        }
+        let spent = self.spend_now();
+        match (self.last_cycle_spend, self.quiet_cycle_spend) {
+            (Some(l), q) => Some((l.max(q.unwrap_or(0.0)).max(spent), "learned")),
+            (None, Some(q)) => Some((q.max(spent), "at_least")),
+            (None, None) => None,
+        }
+    }
+
+    fn credit_left_estimate(&self) -> Option<f64> {
+        if self.row.exhausted_ms.is_some() {
+            return Some(0.0);
+        }
+        self.budget().map(|(b, _)| (b - self.spend_now()).max(0.0))
     }
 }
 
@@ -72,6 +159,7 @@ pub struct Pool {
     inner: Mutex<Inner>,
     store: Arc<Store>,
     cooldowns: Cooldowns,
+    prefer_soonest_reset: bool,
 }
 
 /// A key chosen for one upstream attempt.
@@ -166,6 +254,7 @@ impl Pool {
 
         let mut open_periods = loaded.open_periods;
         let mut last_cycle = store.last_cycle_spend()?;
+        let mut refills = store.refills()?;
         let mut keys = BTreeMap::new();
         for row in key_rows.into_iter().filter(|r| r.deleted_ms.is_none()) {
             let mut k = KeyInfo::new(row);
@@ -174,6 +263,8 @@ impl Pool {
             k.spend = loaded.key_spend.get(&k.row.name).copied().unwrap_or(0.0);
             k.last_credit_fail_ms = k.row.exhausted_ms;
             k.last_cycle_spend = last_cycle.remove(&k.row.name);
+            k.refills = refills.remove(&k.row.name).unwrap_or_default();
+            k.sync_cycle(&store, now);
             let open = open_periods.remove(&k.row.name);
             match (k.row.exhausted_ms, open) {
                 (None, Some(p)) => {
@@ -201,6 +292,7 @@ impl Pool {
             inner: Mutex::new(Inner { keys, clients, by_hash, pins: loaded.pins, client_spend: loaded.client_spend, checking: HashSet::new() }),
             store,
             cooldowns: cfg.cooldowns.clone(),
+            prefer_soonest_reset: cfg.routing.prefer_soonest_reset,
         })
     }
 
@@ -220,11 +312,15 @@ impl Pool {
 
     // ---------------------------------------------------------------- routing
 
-    /// Rendezvous-hash selection: the same affinity always maps to the same healthy key,
-    /// and when that key cools down only its share of traffic moves elsewhere.
+    /// With `prefer_soonest_reset`, the healthy key whose budget resets soonest; keys with
+    /// no guessed reset come after. Ties (and everything, with the option off) go by
+    /// rendezvous hash: the same affinity always maps to the same healthy key, and when that
+    /// key cools down only its share of traffic moves elsewhere.
     pub fn pick(&self, affinity: &[u8], exclude: &[String]) -> Result<Picked, Unavailable> {
         let now = now_ms();
         let mut inner = self.inner.lock();
+        inner.keys.values_mut().for_each(|k| k.roll(&self.store, now));
+        let prefer = self.prefer_soonest_reset;
         let best = inner
             .keys
             .values()
@@ -234,7 +330,8 @@ impl Pool {
                 h.update(affinity);
                 h.update([0u8]);
                 h.update(k.row.name.as_bytes());
-                u64::from_be_bytes(h.finalize()[..8].try_into().unwrap())
+                let reset = if prefer { k.next_reset_ms.unwrap_or(i64::MAX) } else { 0 };
+                (std::cmp::Reverse(reset), u64::from_be_bytes(h.finalize()[..8].try_into().unwrap()))
             })
             .map(|k| k.row.name.clone());
         match best {
@@ -332,6 +429,11 @@ impl Pool {
                 // Passed a 1-token check, then failed real traffic: trust checks on this key less.
                 flapped = true;
                 k.check_backoff = k.check_backoff.saturating_mul(2);
+                // ...and that "refill" wasn't one.
+                if k.period.as_ref().map_or(false, |p| k.refills.last().map(|r| r.at_ms) == Some(p.started_ms)) {
+                    k.refills.pop();
+                    k.sync_cycle(&self.store, now);
+                }
             }
             k.probation = false;
             interval = self.check_interval_secs(k);
@@ -368,6 +470,7 @@ impl Pool {
     pub fn due_credit_checks(&self, max: usize) -> Vec<String> {
         let now = now_ms();
         let mut inner = self.inner.lock();
+        inner.keys.values_mut().for_each(|k| k.roll(&self.store, now));
         let room = max.saturating_sub(inner.checking.len());
         let due: Vec<String> = inner
             .keys
@@ -438,6 +541,8 @@ impl Pool {
                     start_reason: if via_check { "refill detected by credit check" } else { "refill detected by a request" }.into(),
                     refilled_after_ms: k.last_credit_fail_ms,
                 };
+                k.refills.push(Refill { after_ms: p.refilled_after_ms, at_ms: now });
+                k.sync_cycle(&self.store, now);
                 k.period = Some(p.clone());
                 k.period_spend = 0.0;
                 started = Some(p);
@@ -466,6 +571,9 @@ impl Pool {
             }
             if k.period.as_ref().map_or(false, |p| row.ts_ms >= p.started_ms) {
                 k.period_spend += cost;
+            }
+            if k.reset.is_some() && row.ts_ms >= k.cycle_start_ms {
+                k.cycle_spend += cost;
             }
         }
     }
@@ -641,6 +749,8 @@ impl Pool {
             k.check_backoff = 1;
             let had = k.period.is_some();
             k.last_cycle_spend = None;
+            k.refills.clear();
+            k.sync_cycle(&self.store, now);
             let p = OpenPeriod { started_ms: now, start_reason: "key replaced".into(), refilled_after_ms: None };
             k.period = Some(p.clone());
             k.period_spend = 0.0;
@@ -667,6 +777,29 @@ impl Pool {
             }
             self.store.start_period(name, p);
         }
+        Ok(())
+    }
+
+    /// Set or clear (`Some(None)`) the reset moment and the monthly budget by hand. A cleared
+    /// value goes back to being guessed or learned.
+    pub fn set_budget(&self, name: &str, reset_at_ms: Option<Option<i64>>, budget_usd: Option<Option<f64>>) -> Result<()> {
+        let now = now_ms();
+        let mut inner = self.inner.lock();
+        let Some(k) = inner.keys.get_mut(name) else { bail!("unknown key {name}") };
+        if let Some(r) = reset_at_ms {
+            k.row.reset_at_ms = r;
+        }
+        if let Some(b) = budget_usd {
+            k.row.monthly_budget_usd = b;
+        }
+        k.sync_cycle(&self.store, now);
+        if k.row.exhausted_ms.is_some() && k.cycle_start_ms > k.row.exhausted_ms.unwrap_or(i64::MAX) {
+            // A reset has passed since it ran out: check it now.
+            k.row.cooldown_until_ms = k.row.cooldown_until_ms.min(now);
+        }
+        let row = k.row.clone();
+        drop(inner);
+        self.store.save_key(row);
         Ok(())
     }
 
@@ -702,7 +835,17 @@ impl Pool {
 
     pub fn keys_json(&self) -> Value {
         let now = now_ms();
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
+        inner.keys.values_mut().for_each(|k| k.roll(&self.store, now));
+        // Routing order by reset among keys that can take traffic now.
+        let mut by_reset: Vec<(i64, &str)> = inner
+            .keys
+            .values()
+            .filter(|k| Self::available(k, now))
+            .filter_map(|k| k.next_reset_ms.map(|r| (r, k.row.name.as_str())))
+            .collect();
+        by_reset.sort();
+        let rank = |name: &str| by_reset.iter().position(|(_, n)| *n == name).map(|i| i + 1);
         let secs_left = |until: i64| if until > now { (until - now + 999) / 1000 } else { 0 };
         let list: Vec<Value> = inner
             .keys
@@ -736,6 +879,24 @@ impl Pool {
                         (Some(_), Some(last)) => Some(round6(last - k.period_spend)),
                         _ => None,
                     },
+                    "reset": k.anchor.map(|_| json!({
+                        "source": if k.row.reset_at_ms.is_some() { "set" } else { "assumed" },
+                        "last_reset_ms": k.cycle_start_ms,
+                        "next_reset_ms": k.next_reset_ms,
+                    })),
+                    "reset_set_ms": k.row.reset_at_ms,
+                    "reset_guess": k.reset.map(|g| json!({
+                        "next_reset_ms": budget::cycle(g.anchor_ms, now).1,
+                        "uncertainty_hours": g.window_ms.map(|w| (w as f64 / 2.0 / 360_000.0).round() / 10.0),
+                        "refills_seen": g.seen,
+                    })),
+                    "spend_this_budget_cycle_usd": k.anchor.map(|_| round6(k.cycle_spend)),
+                    "monthly_budget_usd": k.budget().map(|(b, _)| round6(b)),
+                    "monthly_budget_source": k.budget().map(|(_, src)| src),
+                    "monthly_budget_set_usd": k.row.monthly_budget_usd,
+                    "limit_not_reached_last_cycle": k.quiet_cycle_spend.is_some(),
+                    "estimated_credit_left_usd": k.credit_left_estimate().map(round6),
+                    "reset_order": if self.prefer_soonest_reset { rank(&k.row.name) } else { None },
                     "on_probation": k.probation,
                     "credit_check_interval_secs": self.check_interval_secs(k),
                     "out_of_credits_since_ms": k.row.exhausted_ms,
@@ -863,6 +1024,138 @@ output = 10.0
         // 2 input + 10 output + 0.2 cache read
         assert!((store.key_spend_since("k", 0).unwrap() - 13.2).abs() < 1e-9);
         assert_eq!(store.reprice_unpriced(&pricing).unwrap(), 0, "idempotent");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keys_resetting_soonest_go_first() {
+        let dir = std::env::temp_dir().join(format!("ckr-pool-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let day = 86_400_000;
+        let now = now_ms();
+        {
+            let (_p, store) = pool(&dir);
+            for name in ["late", "soon", "unknown"] {
+                store.save_key(KeyRow { name: name.into(), secret: format!("sk-{name}"), enabled: true, ..Default::default() });
+            }
+            // Refills seen 20 days ago (next reset in ~10 days) and 5 days ago (~25 days).
+            let refill = |key: &str, ago: i64| {
+                let at = now - ago * day;
+                store.start_period(
+                    key,
+                    OpenPeriod { started_ms: at, start_reason: "refill detected by a request".into(), refilled_after_ms: Some(at - 3_600_000) },
+                );
+            };
+            refill("soon", 20);
+            refill("late", 5);
+            store.shutdown();
+        }
+        let (p, store) = pool(&dir);
+        let (soon, late, unknown) = (key(&p, "soon"), key(&p, "late"), key(&p, "unknown"));
+        let next = soon["reset_guess"]["next_reset_ms"].as_i64().unwrap();
+        assert!((next - (now + 10 * day)).abs() < 2 * day, "{soon}");
+        assert_eq!(soon["reset_guess"]["uncertainty_hours"], 0.5);
+        assert_eq!(soon["reset_order"], 1);
+        assert_eq!(late["reset_order"], 2);
+        assert!(unknown["reset_guess"].is_null() && unknown["reset_order"].is_null());
+        for i in 0..20u8 {
+            assert_eq!(p.pick(&[i], &[]).unwrap().name, "soon");
+        }
+        assert_eq!(p.pick(b"x", &["soon".into()]).unwrap().name, "late");
+        assert_eq!(p.pick(b"x", &["soon".into(), "late".into()]).unwrap().name, "unknown");
+
+        // A refill seen now moves "unknown" to the back of the line (next reset in a month)...
+        p.on_credit_exhausted("unknown", "Your credit balance is too low");
+        p.on_success("unknown", false);
+        let u = key(&p, "unknown");
+        assert_eq!(u["reset_order"], 3);
+        assert_eq!(u["reset_guess"]["refills_seen"], 1);
+        // ...and a "refill" that only the credit check saw, then real traffic failed, is dropped.
+        p.on_credit_exhausted("soon", "Your credit balance is too low");
+        p.on_success("soon", true);
+        assert_eq!(key(&p, "soon")["reset_guess"]["refills_seen"], 1, "today is not the same day of the month");
+        p.on_credit_exhausted("soon", "Your credit balance is too low");
+        let s = key(&p, "soon");
+        let again = s["reset_guess"]["next_reset_ms"].as_i64().unwrap();
+        assert_eq!(again, next, "back to the earlier guess: {s}");
+        assert_eq!(s["estimated_credit_left_usd"], 0.0, "out of credits");
+        assert!(key(&p, "late")["estimated_credit_left_usd"].is_null(), "no full cycle seen yet");
+        store.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_and_budget_can_be_set_and_a_quiet_month_means_not_at_limit() {
+        let dir = std::env::temp_dir().join(format!("ckr-pool-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let day = 86_400_000;
+        let now = now_ms();
+        let spend = |store: &Store, ts_ms: i64, cost: f64| {
+            store.record_request(RequestRow {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                ts_ms,
+                client: "c".into(),
+                key_name: Some("q".into()),
+                method: "POST".into(),
+                path: "/v1/messages".into(),
+                model: Some("claude-haiku-5-5".into()),
+                status: 200,
+                streamed: false,
+                usage: Default::default(),
+                cost_usd: Some(cost),
+                upstream_request_id: None,
+                batch_item: None,
+                attempts: 1,
+                error: None,
+            })
+        };
+        {
+            let (_p, store) = pool(&dir);
+            store.save_key(KeyRow { name: "q".into(), secret: "sk-q".into(), enabled: true, ..Default::default() });
+            store.start_period("q", OpenPeriod { started_ms: now - 70 * day, start_reason: "key added".into(), refilled_after_ms: None });
+            store.end_period("q", now - 50 * day, "out of credits");
+            // Refilled 45 days ago and never ran out since: the assumed reset ~15 days ago passed quietly.
+            store.start_period(
+                "q",
+                OpenPeriod { started_ms: now - 45 * day, start_reason: "refill detected by a request".into(), refilled_after_ms: Some(now - 45 * day - 3_600_000) },
+            );
+            spend(&store, now - 40 * day, 40.0);
+            spend(&store, now - 5 * day, 10.0);
+            store.shutdown();
+        }
+        {
+            let (p, store) = pool(&dir);
+            let q = key(&p, "q");
+            assert_eq!(q["reset"]["source"], "assumed");
+            let last = q["reset"]["last_reset_ms"].as_i64().unwrap();
+            assert!((last - (now - 15 * day)).abs() < 2 * day, "{q}");
+            assert_eq!(q["limit_not_reached_last_cycle"], true, "{q}");
+            assert_eq!(q["monthly_budget_source"], "at_least");
+            assert_eq!(q["monthly_budget_usd"], 40.0);
+            assert_eq!(q["spend_this_budget_cycle_usd"], 10.0);
+            assert_eq!(q["estimated_credit_left_usd"], 30.0);
+
+            // Set by hand: reset 3 days ago (so next in ~a month), budget $100.
+            p.set_budget("q", Some(Some(now - 3 * day)), Some(Some(100.0))).unwrap();
+            let q = key(&p, "q");
+            assert_eq!(q["reset"]["source"], "set");
+            let next = q["reset"]["next_reset_ms"].as_i64().unwrap();
+            assert!(next > now + 26 * day && next < now + 29 * day, "{q}");
+            assert_eq!(q["monthly_budget_source"], "set");
+            assert_eq!(q["estimated_credit_left_usd"], 100.0);
+            assert!(q["reset_guess"]["next_reset_ms"].is_i64(), "the guess is still shown");
+            store.shutdown();
+        }
+        // Kept across a restart; clearing goes back to the guesses.
+        let (p, store) = pool(&dir);
+        assert_eq!(key(&p, "q")["reset"]["source"], "set");
+        assert_eq!(key(&p, "q")["monthly_budget_usd"], 100.0);
+        p.set_budget("q", Some(None), Some(None)).unwrap();
+        let q = key(&p, "q");
+        assert_eq!(q["reset"]["source"], "assumed");
+        assert_eq!(q["monthly_budget_source"], "at_least");
+        assert!(q["reset_set_ms"].is_null() && q["monthly_budget_set_usd"].is_null());
+        store.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

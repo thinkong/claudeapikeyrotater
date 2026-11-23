@@ -43,6 +43,11 @@ pub struct KeyRow {
     pub reason: Option<String>,
     pub exhausted_ms: Option<i64>,
     pub deleted_ms: Option<i64>,
+    /// A reset moment set by hand: every month on its day of the month and time of day.
+    /// Without it, the reset is guessed from refills.
+    pub reset_at_ms: Option<i64>,
+    /// The monthly budget set by hand. Without it, it is learned from spend.
+    pub monthly_budget_usd: Option<f64>,
 }
 
 /// A client as persisted. Only a SHA-256 of the token is stored.
@@ -142,7 +147,9 @@ CREATE TABLE IF NOT EXISTS upstream_keys (
     cooldown_until_ms INTEGER NOT NULL,
     reason TEXT,
     exhausted_ms INTEGER,
-    deleted_ms INTEGER
+    deleted_ms INTEGER,
+    reset_at_ms INTEGER,
+    monthly_budget_usd REAL
 );
 CREATE TABLE IF NOT EXISTS clients (
     name TEXT PRIMARY KEY,
@@ -173,6 +180,15 @@ impl Store {
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path).with_context(|| format!("opening database {path}"))?;
         conn.execute_batch(SCHEMA).context("creating schema")?;
+        // Columns added after the first release; databases created before them get them here.
+        for (table, col, ty) in [("upstream_keys", "reset_at_ms", "INTEGER"), ("upstream_keys", "monthly_budget_usd", "REAL")] {
+            let has: bool = conn
+                .prepare(&format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?1"))?
+                .exists(params![col])?;
+            if !has {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}")).with_context(|| format!("adding {table}.{col}"))?;
+            }
+        }
         let (tx, rx) = mpsc::channel();
         Ok(Store { tx, rx: Mutex::new(Some(rx)), writer: Mutex::new(None), path: path.to_string(), read: Mutex::new(conn) })
     }
@@ -183,7 +199,8 @@ impl Store {
         c.execute("DELETE FROM pins WHERE ts_ms < ?1", params![cutoff])?;
 
         let mut st = c.prepare(
-            "SELECT name, secret, enabled, created_ms, balance_usd, balance_set_ms, cooldown_until_ms, reason, exhausted_ms, deleted_ms
+            "SELECT name, secret, enabled, created_ms, balance_usd, balance_set_ms, cooldown_until_ms, reason, exhausted_ms, deleted_ms,
+                    reset_at_ms, monthly_budget_usd
              FROM upstream_keys ORDER BY created_ms, name",
         )?;
         let keys = st
@@ -199,6 +216,8 @@ impl Store {
                     reason: r.get(7)?,
                     exhausted_ms: r.get(8)?,
                     deleted_ms: r.get(9)?,
+                    reset_at_ms: r.get(10)?,
+                    monthly_budget_usd: r.get(11)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -270,6 +289,51 @@ impl Store {
             out.insert(k, v); // ordered by start, so the newest cycle wins
         }
         Ok(out)
+    }
+
+    /// Per key, the refills seen since its current secret, oldest first: each happened after
+    /// `refilled_after_ms` and by `started_ms`. A refill that only the credit check ever got
+    /// through (and then real traffic failed) was a false alarm and is skipped; one still in
+    /// progress counts.
+    pub fn refills(&self) -> Result<HashMap<String, Vec<crate::budget::Refill>>> {
+        let c = self.read.lock();
+        let mut st = c.prepare(
+            "SELECT p.key_name, p.refilled_after_ms, p.started_ms
+             FROM credit_periods p
+             WHERE p.start_reason LIKE 'refill%'
+               AND p.started_ms >= COALESCE((SELECT MAX(q.started_ms) FROM credit_periods q
+                    WHERE q.key_name = p.key_name AND q.start_reason IN ('key added', 'key replaced')), 0)
+               AND (p.ended_ms IS NULL OR EXISTS (SELECT 1 FROM requests r
+                    WHERE r.key_name = p.key_name AND r.ts_ms >= p.started_ms AND r.ts_ms <= p.ended_ms
+                      AND r.status BETWEEN 200 AND 299 AND r.client <> '_key_check'))
+             ORDER BY p.started_ms",
+        )?;
+        let mut out: HashMap<String, Vec<crate::budget::Refill>> = HashMap::new();
+        for r in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?)))? {
+            let (k, after_ms, at_ms) = r?;
+            out.entry(k).or_default().push(crate::budget::Refill { after_ms, at_ms });
+        }
+        Ok(out)
+    }
+
+    /// Spend on a key in the budget cycle [from, to), and whether the key got through that
+    /// cycle without reaching its limit: the proxy tracked its current secret for the whole
+    /// cycle, it had credit a day in (a day's grace for an imprecise reset time), and it
+    /// didn't run out after that.
+    pub fn quiet_cycle(&self, key: &str, from: i64, to: i64) -> Result<(f64, bool)> {
+        const GRACE_MS: i64 = 86_400_000;
+        let c = self.read.lock();
+        Ok(c.query_row(
+            "SELECT
+                (SELECT COALESCE(SUM(cost_usd), 0) FROM requests WHERE key_name = ?1 AND ts_ms >= ?2 AND ts_ms < ?3),
+                COALESCE((SELECT MAX(started_ms) FROM credit_periods
+                          WHERE key_name = ?1 AND start_reason IN ('key added', 'key replaced', 'tracking started')) <= ?2, 0)
+                AND EXISTS (SELECT 1 FROM credit_periods WHERE key_name = ?1 AND started_ms <= ?4 AND (ended_ms IS NULL OR ended_ms > ?4))
+                AND NOT EXISTS (SELECT 1 FROM credit_periods WHERE key_name = ?1 AND end_reason = 'out of credits'
+                                AND ended_ms >= ?4 AND ended_ms < ?3)",
+            params![key, from, to, from + GRACE_MS],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?)
     }
 
     /// Price requests that were logged without a cost because their model was missing from
@@ -587,12 +651,13 @@ fn writer_loop(mut conn: Connection, rx: mpsc::Receiver<Op>, on_insert: OnInsert
                     Op::Key(k) => {
                         tx.execute(
                             "INSERT INTO upstream_keys (name, secret, enabled, created_ms, balance_usd, balance_set_ms,
-                                cooldown_until_ms, reason, exhausted_ms, deleted_ms)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                                cooldown_until_ms, reason, exhausted_ms, deleted_ms, reset_at_ms, monthly_budget_usd)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                              ON CONFLICT(name) DO UPDATE SET secret = excluded.secret, enabled = excluded.enabled,
                                 created_ms = excluded.created_ms, balance_usd = excluded.balance_usd,
                                 balance_set_ms = excluded.balance_set_ms, cooldown_until_ms = excluded.cooldown_until_ms,
-                                reason = excluded.reason, exhausted_ms = excluded.exhausted_ms, deleted_ms = excluded.deleted_ms",
+                                reason = excluded.reason, exhausted_ms = excluded.exhausted_ms, deleted_ms = excluded.deleted_ms,
+                                reset_at_ms = excluded.reset_at_ms, monthly_budget_usd = excluded.monthly_budget_usd",
                             params![
                                 k.name,
                                 k.secret,
@@ -603,7 +668,9 @@ fn writer_loop(mut conn: Connection, rx: mpsc::Receiver<Op>, on_insert: OnInsert
                                 k.cooldown_until_ms,
                                 k.reason,
                                 k.exhausted_ms,
-                                k.deleted_ms
+                                k.deleted_ms,
+                                k.reset_at_ms,
+                                k.monthly_budget_usd
                             ],
                         )?;
                     }

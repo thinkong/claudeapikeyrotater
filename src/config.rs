@@ -199,6 +199,10 @@ pub struct RoutingCfg {
     pub read_timeout_secs: u64,
     /// Forget resource -> key pins (files, batches, agents...) older than this.
     pub pin_retention_days: u64,
+    /// Send traffic to the key whose monthly budget resets soonest (guessed from observed
+    /// refills), so credit that would be lost at a reset gets used first. Keys whose reset
+    /// isn't known yet come after, spread by affinity. Off: affinity alone picks the key.
+    pub prefer_soonest_reset: bool,
 }
 
 impl Default for RoutingCfg {
@@ -210,6 +214,7 @@ impl Default for RoutingCfg {
             connect_timeout_secs: 10,
             read_timeout_secs: 900,
             pin_retention_days: 90,
+            prefer_soonest_reset: true,
         }
     }
 }

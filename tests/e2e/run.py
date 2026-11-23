@@ -31,6 +31,11 @@ admin_token = "admin-secret"
 
 [cooldowns]
 credit_exhausted_secs = 4
+
+# These tests check affinity routing across keys; keys refilled here would otherwise take
+# all traffic as the ones resetting soonest (that ordering is covered by the unit tests).
+[routing]
+prefer_soonest_reset = false
 """
 
 failures = []
@@ -220,6 +225,24 @@ def run_tests():
           f"credit history: closed period with spend ${hist[1]['spend_usd'] if len(hist) > 1 else '?'} and an open period")
     check(hist[1]["start_reason"] == "key added" and keys()["a"]["estimated_left_this_cycle_usd"] is None,
           f"no 'estimated left' from a first period, only from refills ({hist[1]['start_reason']!r}, {keys()['a']['estimated_left_this_cycle_usd']!r})")
+    ka = keys()["a"]
+    g, r = ka["reset_guess"], ka["reset"]
+    days = (r["next_reset_ms"] - k["funded_since_ms"]) / 86_400_000 if r else 0
+    check(g and g["refills_seen"] == 1 and r["source"] == "assumed" and 28 <= days <= 31.1 and r["last_reset_ms"] <= k["funded_since_ms"]
+          and ka["reset_order"] is None,
+          f"a refill sets the assumed monthly reset: next reset {days:.1f} days later (no order with prefer_soonest_reset off)")
+    check(keys()["b"]["reset"] is None and keys()["b"]["reset_guess"] is None, "a key that never ran out has no reset assumed")
+    set_at = k["funded_since_ms"] - 10 * 86_400_000
+    r = admin("PATCH", "/keys/b", {"reset_at_ms": set_at, "monthly_budget_usd": 50})
+    kb = keys()["b"]
+    days = (kb["reset"]["next_reset_ms"] - set_at) / 86_400_000 if kb["reset"] else 0
+    check(r.status_code == 200 and kb["reset"]["source"] == "set" and 28 <= days <= 31.1 and kb["monthly_budget_source"] == "set"
+          and kb["monthly_budget_usd"] == 50 and kb["estimated_credit_left_usd"] <= 50,
+          f"reset and budget can be set by hand (next reset {days:.1f} days after the set one)")
+    check(admin("PATCH", "/keys/b", {"reset_at_ms": "soon"}).status_code == 400, "a bad reset time is rejected")
+    admin("PATCH", "/keys/b", {"reset_at_ms": None, "monthly_budget_usd": None})
+    kb = keys()["b"]
+    check(kb["reset"] is None and kb["monthly_budget_usd"] is None and kb["reset_set_ms"] is None, "clearing them goes back to the assumptions")
 
     print("flapping key: check passes but real traffic fails -> checks slow down")
     post_msg(msg_body("confirm a2"), {"x-proxy-key": "a2"})  # a real success ends a2's probation from the top-up
